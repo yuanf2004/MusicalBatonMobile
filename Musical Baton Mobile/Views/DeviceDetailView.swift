@@ -46,7 +46,7 @@ struct DeviceDetailView: View {
                     .disabled(manager.isDisconnecting)
                     Divider()
                 }
-                TerminalView(manager: manager, isExpanded: isTerminalExpanded,
+                TerminalView(manager: manager, isExpanded: isTerminalExpanded, isPaused: showingMotionGraphs,
                              onToggleExpansion: { isTerminalExpanded.toggle() })
                     .padding(.horizontal)
                     .padding(.vertical, 8)

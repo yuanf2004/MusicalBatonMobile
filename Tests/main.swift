@@ -76,11 +76,14 @@ precondition(!BatonMotionPacket.matches(serviceUUID: "180F", characteristicUUID:
 precondition(!BatonMotionPacket.matches(serviceUUID: BatonMotionPacket.serviceUUID, characteristicUUID: "2A19"))
 print("Motion packet endian, signed boundaries, flags, units, length, version, and UUID checks passed.")
 
-func historyPacket(sequence: UInt16, uptime: UInt32, flags: UInt8 = 3) throws -> BatonMotionPacket {
+func historyPacket(sequence: UInt16, uptime: UInt32, flags: UInt8 = 3, accelerationX: Int16 = 1000) throws -> BatonMotionPacket {
     var bytes = payload
     bytes[1] = flags
     bytes[2] = UInt8(truncatingIfNeeded: sequence)
     bytes[3] = UInt8(truncatingIfNeeded: sequence >> 8)
+    let rawAcceleration = UInt16(bitPattern: accelerationX)
+    bytes[8] = UInt8(truncatingIfNeeded: rawAcceleration)
+    bytes[9] = UInt8(truncatingIfNeeded: rawAcceleration >> 8)
     for offset in 0..<4 { bytes[4 + offset] = UInt8(truncatingIfNeeded: uptime >> (offset * 8)) }
     return try BatonMotionPacket(data: Data(bytes))
 }
@@ -121,3 +124,39 @@ precondition(fastHistory.samples.count == 1000 && fastHistory.receivedCount == 2
 fastHistory = MotionHistory()
 precondition(fastHistory.samples.isEmpty && fastHistory.receivedCount == 0)
 print("Motion history rollover, clock reset, duplicate, gap, validity, units, window, and memory-bound checks passed.")
+
+// Display reduction must keep spikes, endpoints, and invalid-data gaps without
+// changing the recorded samples, even when a 50 Hz window reaches the cap.
+var displayHistory = MotionHistory()
+for index in 0..<1000 {
+    let x: Int16 = index == 317 ? 30_000 : (index == 318 ? -30_000 : 1000)
+    displayHistory.append(try historyPacket(sequence: UInt16(index), uptime: UInt32(index * 20),
+                                            flags: index == 500 ? 2 : 3, accelerationX: x))
+}
+let display = MotionGraphSnapshot(history: displayHistory, latestPacket: nil, parsingEnabled: true,
+                                  errorMessage: nil, windowSeconds: 30)
+precondition(display.traces.count == 6 && display.receivedCount == 1000)
+precondition(displayHistory.samples.count == 1000 && display.latestPacket?.sequence == 999)
+for trace in display.traces {
+    precondition(trace.pointCount <= 256)
+    let points = trace.segments.flatMap { $0 }
+    precondition(points.last?.time == 0)
+    precondition(zip(points, points.dropFirst()).allSatisfy { $0.time <= $1.time })
+    precondition(points.allSatisfy { trace.yRange.contains($0.value) })
+}
+let accelXTrace = display.traces.first { $0.channel == .accelerationX }!
+let accelXValues = accelXTrace.segments.flatMap { $0 }.map(\.value)
+precondition(accelXValues.contains(30_000) && accelXValues.contains(-30_000))
+precondition(accelXTrace.segments.count == 2)
+precondition(display.traces.first { $0.channel == .gyroscopeX }!.segments.count == 1)
+let accelerationRanges = display.traces.filter { $0.channel.isAcceleration }.map(\.yRange)
+precondition(accelerationRanges.allSatisfy { $0 == accelerationRanges[0] })
+let emptyDisplay = MotionGraphSnapshot(history: MotionHistory(), latestPacket: nil, parsingEnabled: false,
+                                       errorMessage: nil, windowSeconds: 10)
+precondition(emptyDisplay.traces.allSatisfy { $0.segments.isEmpty })
+precondition(emptyDisplay.latestPacket == nil && !emptyDisplay.parsingEnabled)
+let shortDisplay = MotionGraphSnapshot(history: displayHistory, latestPacket: nil, parsingEnabled: true,
+                                       errorMessage: "Malformed packet", windowSeconds: 10)
+precondition(shortDisplay.traces.flatMap { $0.segments.flatMap { $0 } }.allSatisfy { $0.time >= -10 })
+precondition(shortDisplay.errorMessage == "Malformed packet" && shortDisplay.latestPacket?.sequence == 999)
+print("Graph point budget, peak preservation, gaps, ordering, units, windows, and source retention checks passed.")

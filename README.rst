@@ -37,7 +37,7 @@ Features
   live log. Collapse returns to services without disconnecting. Follow and Clear
   remain available in both sizes.
 * Live Graphs button when the baton motion characteristic is discovered. A
-  fullscreen Swift Charts view shows acceleration XYZ (mg) and gyroscope XYZ
+  fullscreen native SwiftUI Canvas view shows acceleration XYZ (mg) and gyroscope XYZ
   (degrees/s) as six separate scrolling time-series charts. Notifications and
   parsing can be enabled in that view. Done returns to services while connected.
   Packet sequence, device uptime, received-value count, interval, flags, and
@@ -96,12 +96,26 @@ on to verify that raw reception continues and decoded values resume immediately.
 Live graph timing
 -----------------
 
-Each dot represents a decoded received sample. The X axis uses elapsed device
-uptime in seconds relative to the newest packet (0); Y axes use mg or degrees/s.
-Current firmware publishes about every 200 ms, so the UI does not fabricate
-100 ms samples. Straight lines connect consecutive valid samples; missing
-sequences, long gaps, and invalid sensor groups break the trace. All three axes
-of each sensor share an automatically sized symmetric Y range.
+The X axis uses elapsed device uptime in seconds relative to the newest packet
+(0); Y axes use mg or degrees/s. Display refresh is limited to 10 times per second,
+independent of the incoming sample rate. Each axis is drawn as lightweight Canvas
+paths with at most 256 display points: first/minimum/maximum/last values from 64
+time buckets preserve peaks. This display reduction does not discard samples
+from the recorded history. No per-sample SwiftUI chart marks or animations are
+created. Graphs and packet status use the same throttled snapshot, and unchanged
+recordings do not trigger new drawings.
+
+Straight lines connect selected points within the same continuous valid segment;
+missing sequences, long gaps, and invalid sensor groups break the trace. All three
+axes of each sensor share an automatically sized symmetric Y range. Isolated
+selected points are shown as dots. Finer detail than the display resolution remains
+available in history within its retention bounds.
+
+Controls observe notification/parsing state separately from high-frequency packet
+values. Refresh tasks stop when the graph screen closes or the app is inactive.
+The terminal redraws at most five times per second and its drawing pauses behind
+the fullscreen graphs, while BLE logging continues. Closing the graphs refreshes
+the terminal with retained entries.
 
 History retains at most 60 seconds and 1,000 samples per motion characteristic.
 Duplicate reads of the same sequence/uptime count as received values but do not
@@ -129,6 +143,10 @@ While connected and receiving notifications, expand the terminal, confirm live
 raw/decoded entries continue, then collapse and verify the notification/parsing
 switches remain enabled. Open Live Graphs, move each axis, change the window,
 verify sequence/uptime/interval updates, and use Done to return while connected.
+At the faster firmware rate, fill the 60-second window, scroll through all axes,
+and confirm responsive controls and that received counts continue to advance.
+Profile on the iPhone with Instruments if responsiveness remains poor; local
+source checks cannot establish device frame rate.
 Verify invalid readings leave gaps and parsing off clears graphs while raw RX
 continues. Unexpected disconnection should still return to Devices.
 A successful build does not verify radio communication or sensor accuracy.
@@ -147,7 +165,8 @@ Standalone formatting/input checks::
     xcrun swiftc -module-cache-path /tmp/musical-baton-swift-cache \
       'Musical Baton Mobile/Utilities/DataFormatting.swift' \
       'Musical Baton Mobile/Models/BatonMotionPacket.swift' \
-      'Musical Baton Mobile/Models/MotionHistory.swift' Tests/main.swift \
+      'Musical Baton Mobile/Models/MotionHistory.swift' \
+      'Musical Baton Mobile/Models/MotionGraphSnapshot.swift' Tests/main.swift \
       -o /tmp/musical-baton-format-checks
     /tmp/musical-baton-format-checks
 
@@ -157,5 +176,7 @@ subprocesses. This is not saved in the project settings. Simulator services
 were unavailable in that environment. After adding the app icon, the full build
 was blocked by asset-catalog compilation requiring simulator runtimes; all Swift
 sources passed direct type checking against the iOS device SDK for the terminal
-expansion and live graphs changes. Decoder and history checks also passed. Physical-device BLE verification remains necessary; no hardware
+expansion and live graphs changes, including graph rendering optimizations.
+Decoder, history, and display-reduction checks also passed. Runtime performance
+has not been measured on an iPhone by the agent. Physical-device BLE verification remains necessary; no hardware
 run was performed by the agent.
