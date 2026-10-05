@@ -1,0 +1,77 @@
+import CoreBluetooth
+import Foundation
+
+// Standalone checks: compile with DataFormatting.swift and BatonMotionPacket.swift.
+let binary = Data([0x00, 0x01, 0x7F, 0x80, 0xFF])
+precondition(hexString(from: binary) == "00 01 7F 80 FF")
+let roundTrip = try dataFromHex(hexString(from: binary))
+precondition(roundTrip == binary)
+let compactHex = try dataFromHex("01ff\nA2\t03")
+precondition(compactHex == Data([1, 255, 162, 3]))
+precondition(hexString(from: Data()) == "")
+precondition(String(data: Data([0xFF]), encoding: .utf8) == nil)
+precondition(String(data: Data("Baton 🎵".utf8), encoding: .utf8) == "Baton 🎵")
+for invalid in ["", " ", "0", "01 F", "GG", "0x01", "01,FF", "ＦＦ"] {
+    do {
+        _ = try dataFromHex(invalid)
+        fatalError("Accepted invalid input: \(invalid)")
+    } catch HexInputError.invalid {} catch { fatalError("Unexpected error: \(error)") }
+}
+precondition(supportsNotifications(.notify))
+precondition(supportsNotifications(.indicate))
+precondition(supportsNotifications(.notifyEncryptionRequired))
+precondition(!supportsNotifications([.read, .write]))
+precondition(propertyNames([.read, .writeWithoutResponse, .indicate]) == ["Read", "Write Without Response", "Indicate"])
+precondition(knownUUIDName(CBUUID(string: "FFFF")) == nil)
+print("Data formatting, binary preservation, input validation, and property checks passed.")
+
+// Golden packet: LE sequence 0x1234, uptime 0x12345678,
+// accel [1000, -1000, -32768] mg; gyro [123, -123, 32767] tenths °/s.
+let payload: [UInt8] = [
+    1, 7, 0x34, 0x12, 0x78, 0x56, 0x34, 0x12,
+    0xE8, 0x03, 0x18, 0xFC, 0x00, 0x80,
+    0x7B, 0x00, 0x85, 0xFF, 0xFF, 0x7F
+]
+let motion = try BatonMotionPacket(data: Data(payload))
+precondition(motion.version == 1 && motion.flags == 7)
+precondition(motion.sequence == 0x1234 && motion.uptimeMilliseconds == 0x12345678)
+precondition(motion.acceleration.x == 1000 && motion.acceleration.y == -1000 && motion.acceleration.z == Int16.min)
+precondition(motion.gyroscope.x == 123 && motion.gyroscope.y == -123 && motion.gyroscope.z == Int16.max)
+precondition(motion.accelerationValid && motion.gyroscopeValid && motion.timeSynchronized)
+precondition(motion.unknownFlags == 0)
+precondition(motion.gyroscope.degreesPerSecondText.contains("-12.3"))
+let padded = Data([0xFF] + payload)
+let sliced = try BatonMotionPacket(data: padded.dropFirst())
+precondition(sliced.sequence == motion.sequence && sliced.acceleration.z == Int16.min)
+for flags: UInt8 in [0, 1, 2, 4, 0xFF] {
+    var bytes = payload
+    bytes[1] = flags
+    let packet = try BatonMotionPacket(data: Data(bytes))
+    precondition(packet.accelerationValid == (flags & 1 != 0))
+    precondition(packet.gyroscopeValid == (flags & 2 != 0))
+    precondition(packet.timeSynchronized == (flags & 4 != 0))
+    precondition(packet.unknownFlags == flags & 0xF8)
+    if flags == 0 { precondition(packet.logSummary.contains("Accel: invalid | Gyro: invalid")) }
+}
+var maximum = [UInt8](repeating: 0xFF, count: 20)
+maximum[0] = 1
+let maxPacket = try BatonMotionPacket(data: Data(maximum))
+precondition(maxPacket.sequence == UInt16.max && maxPacket.uptimeMilliseconds == UInt32.max)
+precondition(maxPacket.acceleration.x == -1 && maxPacket.gyroscope.z == -1)
+for count in [0, 1, 19, 21] {
+    do {
+        _ = try BatonMotionPacket(data: Data(repeating: 1, count: count))
+        fatalError("Accepted invalid motion length: \(count)")
+    } catch BatonMotionPacket.DecodeError.invalidLength(let actual) { precondition(actual == count) }
+}
+var future = payload
+future[0] = 2
+do {
+    _ = try BatonMotionPacket(data: Data(future))
+    fatalError("Accepted unsupported version")
+} catch BatonMotionPacket.DecodeError.unsupportedVersion(let version) { precondition(version == 2) }
+precondition(BatonMotionPacket.matches(serviceUUID: BatonMotionPacket.serviceUUID.lowercased(),
+                                      characteristicUUID: BatonMotionPacket.characteristicUUID.lowercased()))
+precondition(!BatonMotionPacket.matches(serviceUUID: "180F", characteristicUUID: BatonMotionPacket.characteristicUUID))
+precondition(!BatonMotionPacket.matches(serviceUUID: BatonMotionPacket.serviceUUID, characteristicUUID: "2A19"))
+print("Motion packet endian, signed boundaries, flags, units, length, version, and UUID checks passed.")
