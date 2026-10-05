@@ -32,6 +32,16 @@ Features
 * Timestamped terminal for discovery, connection, read, write, notification,
   received bytes, and errors. Clear and Follow controls; the newest 1,000 entries
   are retained. The scanner also provides access to the event log.
+* Expand/collapse button in the connected-device terminal header. Expanded mode
+  fills the screen and keeps the same BLE connection, notifications, parser, and
+  live log. Collapse returns to services without disconnecting. Follow and Clear
+  remain available in both sizes.
+* Live Graphs button when the baton motion characteristic is discovered. A
+  fullscreen Swift Charts view shows acceleration XYZ (mg) and gyroscope XYZ
+  (degrees/s) as six separate scrolling time-series charts. Notifications and
+  parsing can be enabled in that view. Done returns to services while connected.
+  Packet sequence, device uptime, received-value count, interval, flags, and
+  synchronization status remain visible below the graphs.
 * Visible Bluetooth state and error messages. BLE delegate updates run on the
   main queue. Bluetooth permission text is generated into Info.plist.
 
@@ -51,7 +61,10 @@ Run on an iPhone
 6. Expand its discovered service and enable Notifications on the motion
    characteristic. Expect repeated raw 20-byte values in HEX and the terminal.
    Turn on Live motion parsing to see decoded sensor values and motion log entries.
-7. Tap Disconnect (or return to Devices), scan again, and reconnect.
+7. Tap Live Graphs to view six sensor plots; enable Notifications and Live motion
+   parsing there if needed. Choose a 10-, 30-, or 60-second window. Done returns
+   to the connected device without stopping the stream.
+8. Tap Disconnect (or return to Devices), scan again, and reconnect.
 
 Current firmware reference UUIDs are
 ``12345678-1234-5678-1234-56789abcdef0`` (service) and
@@ -80,6 +93,30 @@ On hardware, compare the decoded axes to the firmware's serial output, exercise
 positive/negative readings, and toggle parsing off/on while notifications remain
 on to verify that raw reception continues and decoded values resume immediately.
 
+Live graph timing
+-----------------
+
+Each dot represents a decoded received sample. The X axis uses elapsed device
+uptime in seconds relative to the newest packet (0); Y axes use mg or degrees/s.
+Current firmware publishes about every 200 ms, so the UI does not fabricate
+100 ms samples. Straight lines connect consecutive valid samples; missing
+sequences, long gaps, and invalid sensor groups break the trace. All three axes
+of each sensor share an automatically sized symmetric Y range.
+
+History retains at most 60 seconds and 1,000 samples per motion characteristic.
+Duplicate reads of the same sequence/uptime count as received values but do not
+add duplicate plot points. Clear Graphs resets graph history and its counters;
+Clear in the terminal affects only logs. Turning parsing off clears graph
+history; notification reception and raw logs can continue independently.
+
+32-bit uptime and 16-bit sequence rollover are handled using wrapping differences.
+A backwards device-time jump larger than half the 32-bit range starts a fresh
+chart timeline and increments Clock resets. This detects typical reboots or
+out-of-order timestamps; the packet has no boot ID to distinguish all possible
+clock changes. Reconnection or service rediscovery creates a fresh history.
+Malformed packets do not enter history; their decode error appears in the graph
+view, and any earlier valid packet is labelled as the last decoded value.
+
 Hardware acceptance checks
 --------------------------
 
@@ -88,6 +125,12 @@ live bytes on an actual iPhone and BLE peripheral. Also verify reconnecting,
 turning the baton off while connected, Bluetooth permission denial, and turning
 phone Bluetooth off/on. Use another peripheral with writable characteristics to
 verify writes, both supported response modes, and error presentation.
+While connected and receiving notifications, expand the terminal, confirm live
+raw/decoded entries continue, then collapse and verify the notification/parsing
+switches remain enabled. Open Live Graphs, move each axis, change the window,
+verify sequence/uptime/interval updates, and use Done to return while connected.
+Verify invalid readings leave gaps and parsing off clears graphs while raw RX
+continues. Unexpected disconnection should still return to Devices.
 A successful build does not verify radio communication or sensor accuracy.
 
 Local validation
@@ -103,12 +146,16 @@ Standalone formatting/input checks::
 
     xcrun swiftc -module-cache-path /tmp/musical-baton-swift-cache \
       'Musical Baton Mobile/Utilities/DataFormatting.swift' \
-      'Musical Baton Mobile/Models/BatonMotionPacket.swift' Tests/main.swift \
+      'Musical Baton Mobile/Models/BatonMotionPacket.swift' \
+      'Musical Baton Mobile/Models/MotionHistory.swift' Tests/main.swift \
       -o /tmp/musical-baton-format-checks
     /tmp/musical-baton-format-checks
 
 The development agent's restricted environment required a command-line-only
 ``OTHER_SWIFT_FLAGS='$(inherited) -disable-sandbox'`` override for Swift macro
 subprocesses. This is not saved in the project settings. Simulator services
-were unavailable in that environment. Physical-device BLE verification remains
-necessary; no hardware run was performed by the agent.
+were unavailable in that environment. After adding the app icon, the full build
+was blocked by asset-catalog compilation requiring simulator runtimes; all Swift
+sources passed direct type checking against the iOS device SDK for the terminal
+expansion and live graphs changes. Decoder and history checks also passed. Physical-device BLE verification remains necessary; no hardware
+run was performed by the agent.

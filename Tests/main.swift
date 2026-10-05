@@ -75,3 +75,49 @@ precondition(BatonMotionPacket.matches(serviceUUID: BatonMotionPacket.serviceUUI
 precondition(!BatonMotionPacket.matches(serviceUUID: "180F", characteristicUUID: BatonMotionPacket.characteristicUUID))
 precondition(!BatonMotionPacket.matches(serviceUUID: BatonMotionPacket.serviceUUID, characteristicUUID: "2A19"))
 print("Motion packet endian, signed boundaries, flags, units, length, version, and UUID checks passed.")
+
+func historyPacket(sequence: UInt16, uptime: UInt32, flags: UInt8 = 3) throws -> BatonMotionPacket {
+    var bytes = payload
+    bytes[1] = flags
+    bytes[2] = UInt8(truncatingIfNeeded: sequence)
+    bytes[3] = UInt8(truncatingIfNeeded: sequence >> 8)
+    for offset in 0..<4 { bytes[4 + offset] = UInt8(truncatingIfNeeded: uptime >> (offset * 8)) }
+    return try BatonMotionPacket(data: Data(bytes))
+}
+var history = MotionHistory()
+history.append(try historyPacket(sequence: UInt16.max, uptime: UInt32.max - 99))
+history.append(try historyPacket(sequence: 0, uptime: 100))
+precondition(history.samples.count == 2 && history.samples.last?.elapsedMilliseconds == 200)
+precondition(history.lastIntervalMilliseconds == 200 && history.clockResetCount == 0)
+precondition(history.samples.last?.accelerationSegment == 0)
+history.append(try historyPacket(sequence: 0, uptime: 100))
+precondition(history.receivedCount == 3 && history.samples.count == 2)
+history.append(try historyPacket(sequence: 2, uptime: 500))
+precondition(history.samples.last?.accelerationSegment == 1 && history.samples.last?.gyroscopeSegment == 1)
+history.append(try historyPacket(sequence: 3, uptime: 700, flags: 2))
+let invalidSample = history.samples.last!
+precondition(MotionChannel.accelerationX.value(in: invalidSample.packet) == nil)
+precondition(MotionChannel.gyroscopeX.value(in: invalidSample.packet) == 12.3)
+history.append(try historyPacket(sequence: 4, uptime: 900))
+precondition(history.samples.last?.accelerationSegment == 2 && history.samples.last?.gyroscopeSegment == 1)
+precondition(MotionChannel.accelerationY.value(in: history.samples.last!.packet) == -1000)
+precondition(MotionChannel.gyroscopeY.value(in: history.samples.last!.packet) == -12.3)
+history.append(try historyPacket(sequence: 0, uptime: 50))
+precondition(history.clockResetCount == 1 && history.samples.count == 1)
+precondition(history.samples.last?.elapsedMilliseconds == 0 && history.lastIntervalMilliseconds == nil)
+var timedHistory = MotionHistory()
+for index in 0...400 {
+    timedHistory.append(try historyPacket(sequence: UInt16(index), uptime: UInt32(index * 200)))
+}
+precondition(timedHistory.samples.count == 301)
+precondition(timedHistory.samples.first?.elapsedMilliseconds == 20_000)
+precondition(timedHistory.visibleSamples(seconds: 10).count == 51)
+precondition(timedHistory.visibleSamples(seconds: 30).count == 151)
+var fastHistory = MotionHistory()
+for index in 0...2000 {
+    fastHistory.append(try historyPacket(sequence: UInt16(index), uptime: UInt32(index)))
+}
+precondition(fastHistory.samples.count == 1000 && fastHistory.receivedCount == 2001)
+fastHistory = MotionHistory()
+precondition(fastHistory.samples.isEmpty && fastHistory.receivedCount == 0)
+print("Motion history rollover, clock reset, duplicate, gap, validity, units, window, and memory-bound checks passed.")

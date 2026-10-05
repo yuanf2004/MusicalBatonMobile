@@ -25,6 +25,10 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
         central = CBCentralManager(delegate: self, queue: .main)
     }
 
+    var batonMotionCharacteristic: BLECharacteristic? {
+        services.flatMap(\.characteristics).first { $0.isBatonMotion }
+    }
+
     var bluetoothStatus: String {
         switch bluetoothState {
         case .poweredOn: "Bluetooth is on"

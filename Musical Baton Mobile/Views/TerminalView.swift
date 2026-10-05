@@ -2,6 +2,8 @@ import SwiftUI
 
 struct TerminalView: View {
     let manager: BLEManager
+    var isExpanded = false
+    var onToggleExpansion: (() -> Void)? = nil
     @State private var autoScroll = true
 
     var body: some View {
@@ -11,6 +13,14 @@ struct TerminalView: View {
                 Spacer()
                 Toggle("Follow", isOn: $autoScroll).fixedSize().font(.caption)
                 Button("Clear") { manager.clearLogs() }.font(.subheadline)
+                if let onToggleExpansion {
+                    Button(action: onToggleExpansion) {
+                        Label(isExpanded ? "Collapse Terminal" : "Expand Terminal",
+                              systemImage: isExpanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                    }
+                    .labelStyle(.iconOnly)
+                    .accessibilityHint(isExpanded ? "Return to services while staying connected" : "Show the live terminal fullscreen while staying connected")
+                }
             }
             ScrollViewReader { proxy in
                 ScrollView {

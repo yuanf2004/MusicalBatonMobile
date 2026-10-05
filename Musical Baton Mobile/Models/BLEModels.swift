@@ -31,6 +31,7 @@ final class BLECharacteristic: Identifiable {
     var isMotionParsingEnabled = false
     var motionPacket: BatonMotionPacket?
     var motionDecodeError: String?
+    var motionHistory = MotionHistory()
     var isNotifying = false
     var notificationPending = false
     var readPending = false
@@ -52,9 +53,16 @@ final class BLECharacteristic: Identifiable {
         value = data
         motionPacket = nil
         motionDecodeError = nil
-        guard isBatonMotion, isMotionParsingEnabled, let data else { return }
-        do { motionPacket = try BatonMotionPacket(data: data) }
-        catch { motionDecodeError = error.localizedDescription }
+        guard isBatonMotion, isMotionParsingEnabled else {
+            motionHistory = MotionHistory()
+            return
+        }
+        guard let data else { return }
+        do {
+            let packet = try BatonMotionPacket(data: data)
+            motionPacket = packet
+            motionHistory.append(packet)
+        } catch { motionDecodeError = error.localizedDescription }
     }
 }
 
