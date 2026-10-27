@@ -160,3 +160,49 @@ let shortDisplay = MotionGraphSnapshot(history: displayHistory, latestPacket: ni
 precondition(shortDisplay.traces.flatMap { $0.segments.flatMap { $0 } }.allSatisfy { $0.time >= -10 })
 precondition(shortDisplay.errorMessage == "Malformed packet" && shortDisplay.latestPacket?.sequence == 999)
 print("Graph point budget, peak preservation, gaps, ordering, units, windows, and source retention checks passed.")
+
+let csvMetadata = IMURecordingMetadata(deviceID: "test-device", deviceName: "Baton, \"test\"\nsecond line",
+                                       serviceUUID: BatonMotionPacket.serviceUUID,
+                                       characteristicUUID: BatonMotionPacket.characteristicUUID)
+let csvFormatter = ISO8601DateFormatter()
+csvFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+csvFormatter.timeZone = TimeZone(secondsFromGMT: 0)
+precondition(IMUCSVEncoding.escape("a,b") == "\"a,b\"")
+precondition(IMUCSVEncoding.escape("a\"b") == "\"a\"\"b\"")
+precondition(IMUCSVEncoding.escape("a\nb") == "\"a\nb\"")
+let encodedCSV = IMUCSVEncoding.encode(IMUCSVRow(receivedAt: Date(timeIntervalSince1970: 0),
+    elapsedMilliseconds: 12.5, metadata: csvMetadata, data: Data(payload)), formatter: csvFormatter)
+let encodedText = String(data: encodedCSV.data, encoding: .utf8)!
+precondition(!encodedCSV.malformed && encodedText.contains("1970-01-01T00:00:00.000Z"))
+precondition(encodedText.contains("12.500") && encodedText.contains("12.3,-12.3,3276.7"))
+let csvTestDirectory = URL(fileURLWithPath: "/tmp/musical-baton-csv-checks", isDirectory: true)
+let csvTestURL = csvTestDirectory.appendingPathComponent("recording.csv")
+let csvWriter = try IMUCSVFileWriter(url: csvTestURL) { _ in fatalError("Unexpected CSV write failure") }
+for index in 0..<1500 {
+    var bytes = payload
+    bytes[2] = UInt8(truncatingIfNeeded: index)
+    bytes[3] = UInt8(truncatingIfNeeded: index >> 8)
+    csvWriter.append(IMUCSVRow(receivedAt: Date(timeIntervalSince1970: Double(index) * 0.02),
+        elapsedMilliseconds: Double(index * 20), metadata: csvMetadata, data: Data(bytes)))
+}
+var invalidFlags = payload
+invalidFlags[1] = 0
+for bytes in [future, invalidFlags, payload, []] {
+    csvWriter.append(IMUCSVRow(receivedAt: Date(timeIntervalSince1970: 30), elapsedMilliseconds: 30_000,
+                              metadata: csvMetadata, data: Data(bytes)))
+}
+nonisolated final class CSVSummaryBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: IMUCSVFileSummary?
+    func set(_ summary: IMUCSVFileSummary) { lock.lock(); stored = summary; lock.unlock() }
+    func get() -> IMUCSVFileSummary? { lock.lock(); defer { lock.unlock() }; return stored }
+}
+let csvSummaryBox = CSVSummaryBox()
+let csvFinished = DispatchSemaphore(value: 0)
+csvWriter.finish { summary in csvSummaryBox.set(summary); csvFinished.signal() }
+precondition(csvFinished.wait(timeout: .now() + 10) == .success)
+precondition(csvSummaryBox.get()?.writtenRows == 1504 && csvSummaryBox.get()?.malformedRows == 2)
+precondition(csvSummaryBox.get()?.errorMessage == nil)
+let completedCSV = try String(contentsOf: csvTestURL, encoding: .utf8)
+precondition(completedCSV.hasPrefix(IMUCSVEncoding.columns.joined(separator: ",") + "\r\n"))
+print("CSV encoding, FIFO writing, flushing, duplicate retention, and malformed-row checks passed: \(csvTestURL.path)")

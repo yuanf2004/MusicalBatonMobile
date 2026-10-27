@@ -4,6 +4,7 @@ import SwiftUI
 struct DeviceScannerView: View {
     let manager: BLEManager
     @State private var searchText = ""
+    @State private var showingProfiles = false
     @AppStorage("scanner.includeUnnamed") private var includeUnnamed = false
     @AppStorage("scanner.connectableOnly") private var connectableOnly = true
 
@@ -45,6 +46,14 @@ struct DeviceScannerView: View {
                 Toggle("Connectable devices only", isOn: $connectableOnly)
             } header: { Text("Filters") } footer: {
                 Text("Search by name, device ID, or advertised service UUID. Some devices do not advertise a name; include unnamed devices to see them.")
+            }
+
+            Section("Conducting") {
+                Button("Saved Profiles", systemImage: "person.crop.rectangle") { showingProfiles = true }
+                if let profile = manager.conductingProfiles.selected {
+                    Text("\(profile.name) · \(profile.beatsPerMeasure) beats per measure")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
 
             Section("Nearby Devices (\(filteredDevices.count) of \(manager.devices.count))") {
@@ -92,7 +101,11 @@ struct DeviceScannerView: View {
             }
             Section {
                 NavigationLink("BLE Event Log") { TerminalView(manager: manager).padding() }
+                NavigationLink("IMU Recordings") { IMURecordingView(manager: manager) }
             }
+        }
+        .sheet(isPresented: $showingProfiles) {
+            NavigationStack { ConductingProfilesView(store: manager.conductingProfiles) }
         }
         .navigationTitle("Smart Baton BLE")
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Name or UUID")

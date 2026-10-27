@@ -1,11 +1,11 @@
 import Foundation
 
 // Matches bluetooth_publish() and the flag definitions in the baton firmware.
-struct BatonMotionPacket {
+nonisolated struct BatonMotionPacket: Sendable {
     static let serviceUUID = "12345678-1234-5678-1234-56789ABCDEF0"
     static let characteristicUUID = "12345678-1234-5678-1234-56789ABCDEF1"
 
-    struct Axes {
+    struct Axes: Sendable {
         let x: Int16
         let y: Int16
         let z: Int16

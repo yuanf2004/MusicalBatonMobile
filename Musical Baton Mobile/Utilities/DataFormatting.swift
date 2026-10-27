@@ -53,6 +53,8 @@ func knownUUIDName(_ uuid: CBUUID) -> String? {
     switch uuid.uuidString.uppercased() {
     case BatonMotionPacket.serviceUUID: "Smart Baton Motion Service"
     case BatonMotionPacket.characteristicUUID: "Baton Motion"
+    case BatonBeatPacket.characteristicUUID: "Baton Beat Events"
+    case ConductingSettingsPacket.characteristicUUID: "Conducting Settings"
     case "1800": "Generic Access"
     case "1801": "Generic Attribute"
     case "180A": "Device Information"

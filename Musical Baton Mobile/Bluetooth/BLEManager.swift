@@ -16,17 +16,84 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
     private(set) var services: [BLEService] = []
     private(set) var logs: [BLELogEntry] = []
     var errorMessage: String?
+    let imuRecorder = IMURecorder()
+    let conducting = ConductingController()
+    let conductingProfiles = ConductingProfileStore()
+    @ObservationIgnored private var pendingProfileSettings: Data?
+    @ObservationIgnored private var profileSettingsApplied = false
+    @ObservationIgnored private var beatSubscriptionTimeout: Task<Void, Never>?
     @ObservationIgnored private var central: CBCentralManager!
     @ObservationIgnored private var connectionTimeout: Task<Void, Never>?
     @ObservationIgnored private var deviceIndices: [UUID: Int] = [:]
 
     override init() {
         super.init()
+        imuRecorder.onEvent = { [weak self] message in self?.log(message) }
         central = CBCentralManager(delegate: self, queue: .main)
     }
 
     var batonMotionCharacteristic: BLECharacteristic? {
         services.flatMap(\.characteristics).first { $0.isBatonMotion }
+    }
+
+    var batonBeatCharacteristic: BLECharacteristic? {
+        services.flatMap(\.characteristics).first { $0.isBatonBeat }
+    }
+
+    var batonSettingsCharacteristic: BLECharacteristic? {
+        services.flatMap(\.characteristics).first { $0.isBatonSettings }
+    }
+
+    func setConductingMode(_ enabled: Bool) {
+        guard enabled else { stopConducting(); return }
+        guard !conducting.isEnabled else { return }
+        guard isConnected, !isDisconnecting, let model = batonBeatCharacteristic,
+              model.characteristic.properties.contains(.notify),
+              let settings = batonSettingsCharacteristic,
+              settings.characteristic.properties.contains([.read, .write]) else {
+            conducting.fail("Profiles need updated baton firmware. Flash the profile-enabled build and reconnect.")
+            return
+        }
+        guard !settings.writePending, !settings.readPending else {
+            conducting.fail("A settings request is still pending. Wait or reconnect before trying again.")
+            return
+        }
+        guard let profile = conductingProfiles.selected else {
+            conducting.fail("Create and select a profile first.")
+            return
+        }
+        conducting.start(profile: profile)
+        guard conducting.isEnabled, let peripheral = usablePeripheral(for: settings) else { return }
+        profileSettingsApplied = false
+        let payload = ConductingSettingsPacket.encode(profile.sensitivity)
+        pendingProfileSettings = payload
+        settings.writePending = true
+        settings.error = nil
+        peripheral.writeValue(payload, for: settings.characteristic, type: .withResponse)
+        if !model.isNotifying && !model.notificationPending { setNotifications(true, for: model) }
+        beatSubscriptionTimeout?.cancel()
+        beatSubscriptionTimeout = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(10)) } catch { return }
+            guard let self, self.conducting.isEnabled, !self.conducting.isReady else { return }
+            self.stopConducting()
+            self.conducting.fail("Profile setup timed out. Reconnect and try again.")
+        }
+        log("Applying conducting profile: \(profile.name)")
+    }
+
+    private func updateConductingReadiness() {
+        let ready = profileSettingsApplied && batonBeatCharacteristic?.isNotifying == true
+            && batonBeatCharacteristic?.notificationPending == false
+        conducting.notificationState(ready: ready)
+        if ready { beatSubscriptionTimeout?.cancel() }
+    }
+
+    func stopConducting(reason: String = "Conducting Mode is off.") {
+        beatSubscriptionTimeout?.cancel()
+        beatSubscriptionTimeout = nil
+        pendingProfileSettings = nil
+        profileSettingsApplied = false
+        conducting.stop(reason: reason)
     }
 
     var bluetoothStatus: String {
@@ -78,6 +145,8 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
     func disconnect() {
         guard let device = activeDevice, !isDisconnecting else { return }
         connectionTimeout?.cancel()
+        stopConducting(reason: "Device disconnecting.")
+        imuRecorder.stop(reason: "Disconnect requested")
         isDisconnecting = true
         log(isConnected ? "Disconnecting from \(device.name)…" : "Cancelling connection to \(device.name)…")
         central.cancelPeripheralConnection(device.peripheral)
@@ -95,6 +164,8 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
         guard let peripheral = usablePeripheral(for: model), supportsNotifications(model.characteristic.properties), !model.notificationPending else { return }
         model.error = nil
         model.notificationPending = true
+        if !enabled, model.isBatonBeat { stopConducting(reason: "Beat notifications disabled.") }
+        if !enabled, model.isBatonMotion { imuRecorder.stop(reason: "Motion notifications disabled") }
         log("Notifications \(enabled ? "enable" : "disable") requested [\(model.characteristic.uuid)]")
         peripheral.setNotifyValue(enabled, for: model.characteristic)
     }
@@ -112,6 +183,7 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
             characteristicError("The write buffer is full. Try again shortly.", model)
             return
         }
+        if model.isBatonSettings { stopConducting(reason: "Settings changed. Enable your profile again to continue.") }
         model.error = nil
         model.writePending = type == .withResponse
         log("TX [\(model.characteristic.uuid)] \(type == .withResponse ? "with response" : "without response (unacknowledged)"): \(hexString(from: data))")
@@ -125,6 +197,24 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
         log("Baton motion parsing \(enabled ? "enabled" : "disabled") [\(model.characteristic.uuid)]")
         if let packet = model.motionPacket { log(packet.logSummary) }
         else if let error = model.motionDecodeError { log("DECODE ERROR: \(error)") }
+    }
+
+    func startIMURecording(duration: TimeInterval) {
+        guard isConnected, !isDisconnecting, let device = activeDevice,
+              let model = batonMotionCharacteristic else {
+            report("Connect to the baton motion service before recording.")
+            return
+        }
+        guard model.isNotifying, !model.notificationPending else {
+            report("Enable motion Notifications and wait for confirmation before recording.")
+            return
+        }
+        do {
+            try imuRecorder.start(duration: duration, metadata: IMURecordingMetadata(
+                deviceID: device.id.uuidString, deviceName: device.name,
+                serviceUUID: model.characteristic.service?.uuid.uuidString ?? BatonMotionPacket.serviceUUID,
+                characteristicUUID: model.characteristic.uuid.uuidString))
+        } catch { report("Could not start recording: \(error.localizedDescription)") }
     }
 
     func clearLogs() { logs.removeAll() }
@@ -156,6 +246,9 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
     }
 
     private func resetConnection() {
+        stopConducting()
+        conducting.resetConnection()
+        imuRecorder.stop(reason: "Device disconnected")
         connectionTimeout?.cancel()
         connectionTimeout = nil
         activeDevice?.peripheral.delegate = nil
@@ -269,12 +362,40 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
+        let receivedAt = Date()
+        let receivedUptime = ProcessInfo.processInfo.systemUptime
         guard let model = model(for: characteristic) else { return }
         model.readPending = false
-        if let error { characteristicError("Value update failed: \(error.localizedDescription)", model); return }
+        if let error {
+            if model.isBatonSettings, pendingProfileSettings != nil {
+                stopConducting()
+                conducting.fail("Could not verify the baton settings: \(error.localizedDescription)")
+            }
+            characteristicError("Value update failed: \(error.localizedDescription)", model)
+            return
+        }
         model.error = nil
         model.updateValue(characteristic.value)
+        if model.isBatonSettings, let expected = pendingProfileSettings, conducting.isEnabled {
+            pendingProfileSettings = nil
+            if characteristic.value == expected {
+                profileSettingsApplied = true
+                updateConductingReadiness()
+                log("Conducting sensitivity confirmed by baton")
+            } else {
+                stopConducting()
+                conducting.fail("The baton did not confirm the selected sensitivity. Reconnect and try again.")
+            }
+        }
         if let data = characteristic.value {
+            if model.isBatonBeat {
+                do {
+                    let beat = try BatonBeatPacket(data: data)
+                    if model.isNotifying { conducting.receive(beat) }
+                    log("BEAT seq=\(beat.sequence) t=\(beat.uptimeMilliseconds) strength=\(beat.strength)")
+                } catch { log("BEAT DECODE ERROR: \(error.localizedDescription)") }
+            }
+            if model.isBatonMotion { imuRecorder.receive(data, at: receivedAt, uptime: receivedUptime) }
             log("RX [\(characteristic.uuid)]: \(data.isEmpty ? "(empty)" : hexString(from: data))")
         } else { log("RX [\(characteristic.uuid)]: no value") }
         if let packet = model.motionPacket {
@@ -288,6 +409,12 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
         guard let model = model(for: characteristic) else { return }
         model.notificationPending = false
         model.isNotifying = characteristic.isNotifying
+        if model.isBatonMotion, !model.isNotifying { imuRecorder.stop(reason: "Motion notifications ended") }
+        if model.isBatonBeat {
+            if let error { conducting.fail("Beat notifications failed: \(error.localizedDescription)") }
+            else if !model.isNotifying { stopConducting(reason: "Beat notifications ended.") }
+            else { updateConductingReadiness() }
+        }
         if let error { characteristicError("Notification change failed: \(error.localizedDescription)", model); return }
         model.error = nil
         log("Notifications \(characteristic.isNotifying ? "enabled" : "disabled") [\(characteristic.uuid)]")
@@ -296,13 +423,27 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
         guard let model = model(for: characteristic) else { return }
         model.writePending = false
-        if let error { characteristicError("Write failed: \(error.localizedDescription)", model); return }
+        if let error {
+            if model.isBatonSettings, pendingProfileSettings != nil {
+                stopConducting()
+                conducting.fail("The baton rejected the profile: \(error.localizedDescription)")
+            }
+            characteristicError("Write failed: \(error.localizedDescription)", model)
+            return
+        }
+        if model.isBatonSettings, pendingProfileSettings != nil, conducting.isEnabled {
+            // Write acknowledgement alone is not enough; verify the stored setting.
+            read(model)
+        }
         model.error = nil
         log("Write acknowledged [\(characteristic.uuid)]")
     }
 
     func peripheral(_ peripheral: CBPeripheral, didModifyServices invalidatedServices: [CBService]) {
         guard peripheral.identifier == activeDevice?.id, !isDisconnecting else { return }
+        stopConducting(reason: "Baton services changed. Enable the mode after discovery finishes.")
+        conducting.resetConnection()
+        imuRecorder.stop(reason: "GATT services changed")
         log("GATT services changed; rediscovering")
         services.removeAll()
         discoverServices(peripheral)

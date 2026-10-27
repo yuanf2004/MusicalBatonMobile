@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var manager = BLEManager()
+    @Environment(\.scenePhase) private var scenePhase
     @State private var showingDevice = false
 
     var body: some View {
@@ -16,6 +17,10 @@ struct ContentView: View {
         }
         .onChange(of: showingDevice) { _, presented in
             if !presented { manager.disconnect() }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { manager.stopConducting(reason: "App inactive. Enable Conducting Mode when you return.") }
+            if phase == .background { manager.imuRecorder.stop(reason: "App entered background") }
         }
         .alert("Bluetooth error", isPresented: Binding(
             get: { manager.errorMessage != nil },

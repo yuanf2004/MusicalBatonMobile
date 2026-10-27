@@ -4,6 +4,8 @@ struct DeviceDetailView: View {
     let manager: BLEManager
     @State private var isTerminalExpanded = false
     @State private var showingMotionGraphs = false
+    @State private var showingRecorder = false
+    @State private var showingConducting = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -21,9 +23,20 @@ struct DeviceDetailView: View {
                             Text(device.id.uuidString).font(.caption.monospaced()).foregroundStyle(.secondary)
                                 .textSelection(.enabled)
                         }
+                        Button { showingConducting = true } label: {
+                            Label("Conducting Mode", systemImage: "music.note")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(manager.isDisconnecting)
                         if manager.batonMotionCharacteristic != nil {
-                            Button { showingMotionGraphs = true } label: {
-                                Label("Live Graphs", systemImage: "waveform.path.ecg")
+                            HStack {
+                                Button { showingMotionGraphs = true } label: {
+                                    Label("Live Graphs", systemImage: "waveform.path.ecg")
+                                }
+                                Button { showingRecorder = true } label: {
+                                    Label(manager.imuRecorder.isRecording ? "Recording…" : "Record IMU",
+                                          systemImage: "record.circle")
+                                }
                             }
                             .buttonStyle(.bordered)
                             .disabled(manager.isDisconnecting)
@@ -46,7 +59,7 @@ struct DeviceDetailView: View {
                     .disabled(manager.isDisconnecting)
                     Divider()
                 }
-                TerminalView(manager: manager, isExpanded: isTerminalExpanded, isPaused: showingMotionGraphs,
+                TerminalView(manager: manager, isExpanded: isTerminalExpanded, isPaused: showingMotionGraphs || showingConducting,
                              onToggleExpansion: { isTerminalExpanded.toggle() })
                     .padding(.horizontal)
                     .padding(.vertical, 8)
@@ -60,8 +73,17 @@ struct DeviceDetailView: View {
         .fullScreenCover(isPresented: $showingMotionGraphs) {
             NavigationStack { MotionGraphsView(manager: manager) }
         }
+        .sheet(isPresented: $showingConducting) {
+            NavigationStack { ConductingModeView(manager: manager) }
+        }
+        .sheet(isPresented: $showingRecorder) {
+            NavigationStack { IMURecordingView(manager: manager) }
+        }
         .onChange(of: manager.isConnected) { _, connected in
-            if !connected { showingMotionGraphs = false }
+            if !connected {
+                showingMotionGraphs = false
+                showingConducting = false
+            }
         }
         .toolbar {
             if isTerminalExpanded {
