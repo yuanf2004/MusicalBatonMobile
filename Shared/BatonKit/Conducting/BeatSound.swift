@@ -4,6 +4,7 @@ import Foundation
 // network access, microphone permission, or file I/O on the beat path.
 nonisolated enum BeatSound {
     static func wavData(voice: ClickVoice = .click, accented: Bool = false) -> Data {
+        let accented = accented || voice == .accented
         let rate = 44_100
         let count = rate * 60 / 1000
         var data = Data()
@@ -26,7 +27,9 @@ nonisolated enum BeatSound {
             let pitch = accented ? 1.3 : 1.0
             let wave: Double
             switch voice {
-            case .click: wave = sin(2 * Double.pi * 880 * pitch * t)
+            case .click, .accented: wave = sin(2 * Double.pi * 880 * pitch * t)
+            case .lowPitch: wave = sin(2 * Double.pi * 220 * pitch * t)
+            case .highPitch: wave = sin(2 * Double.pi * 1760 * pitch * t)
             case .wood: wave = 0.7 * sin(2 * Double.pi * 420 * pitch * t)
                 + 0.3 * sin(2 * Double.pi * 960 * pitch * t)
             case .bell: wave = 0.65 * sin(2 * Double.pi * 1320 * pitch * t)

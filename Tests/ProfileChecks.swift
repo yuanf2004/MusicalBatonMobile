@@ -62,7 +62,7 @@ struct ProfileChecks {
                 sounds.insert(wav)
             }
         }
-        precondition(sounds.count == 6)
-        print("Profile persistence/CRUD, validation, continuous playback gaps, wrap, settings and six sounds passed")
+        precondition(sounds.count == 10) // Five pitches/timbres, each plain or accented; accented voice aliases accented click.
+        print("Profile persistence/CRUD, validation, continuous playback gaps, wrap, settings and ten sound variants passed")
     }
 }

@@ -17,3 +17,5 @@ compile "$core/Models/BatonMotionPacket.swift" "$core/Conducting/GestureFilter.s
 "$out/gesture" "$PWD"
 compile "$core/Models/ConductingProfile.swift" "$core/Conducting/BeatSound.swift" "$core/Conducting/BeatAudioEngine.swift" Tests/AudioBufferChecks.swift -o "$out/audio"
 "$out/audio"
+compile Apps/Baton/Baton/ProductPreferences.swift Tests/ProductPreferenceChecks.swift -o "$out/product"
+"$out/product"

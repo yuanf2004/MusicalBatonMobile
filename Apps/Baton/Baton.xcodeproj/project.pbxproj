@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXFileReference section */
-		BA7189A93074289400A677DA /* Baton.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Baton.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		BA7189A93074289400A677DA /* Baton.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Baton.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -21,19 +21,19 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		BA7100000000000000000001 /* ../../Shared/BatonKit */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ../../Shared/BatonKit;
+			sourceTree = "<group>";
+		};
 		BA7189AB3074289400A677DA /* Baton */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				BA7189B93074297600A677DA /* Exceptions for "Baton" folder in "Baton" target */,
 			);
-			path = "Baton";
+			path = Baton;
 			sourceTree = "<group>";
 		};
-		BA7100000000000000000001 /* BatonKit */ = {
-            isa = PBXFileSystemSynchronizedRootGroup;
-            path = ../../Shared/BatonKit;
-            sourceTree = "<group>";
-        };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -50,7 +50,7 @@
 		BA7189A03074289400A677DA = {
 			isa = PBXGroup;
 			children = (
-                BA7100000000000000000001 /* BatonKit */,
+				BA7100000000000000000001 /* ../../Shared/BatonKit */,
 				BA7189AB3074289400A677DA /* Baton */,
 				BA7189AA3074289400A677DA /* Products */,
 			);
@@ -80,13 +80,13 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-                BA7100000000000000000001 /* BatonKit */,
+				BA7100000000000000000001 /* ../../Shared/BatonKit */,
 				BA7189AB3074289400A677DA /* Baton */,
 			);
-			name = "Baton";
+			name = Baton;
 			packageProductDependencies = (
 			);
-			productName = "Baton";
+			productName = Baton;
 			productReference = BA7189A93074289400A677DA /* Baton.app */;
 			productType = "com.apple.product-type.application";
 		};
@@ -269,13 +269,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = SM558KRYAG;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-                INFOPLIST_FILE = Config/Info.plist;
-                INFOPLIST_KEY_CFBundleDisplayName = "Musical Baton";
+				INFOPLIST_FILE = Config/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Musical Baton";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Smart Baton uses Bluetooth to connect to and communicate with the baton.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -304,13 +305,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = SM558KRYAG;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-                INFOPLIST_FILE = Config/Info.plist;
-                INFOPLIST_KEY_CFBundleDisplayName = "Musical Baton";
+				INFOPLIST_FILE = Config/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Musical Baton";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Smart Baton uses Bluetooth to connect to and communicate with the baton.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

@@ -19,6 +19,19 @@ struct AudioBufferChecks {
             precondition(peak > 0.1 && peak < 1)
             precondition(data[Int(buffer.frameLength)-1] == 0)
         }
-        print("Audio buffers preserve every PCM sample, duration, format and envelope for all three voices")
+        func sample(_ voice: ClickVoice, _ index: Int) -> Double {
+            let buffer = try! BeatAudioEngine.makeBuffer(voice: voice)
+            return Double(buffer.floatChannelData![0][index])
+        }
+        for (voice, frequency, gain) in [(ClickVoice.lowPitch, 220.0, 0.4),
+                                         (.highPitch, 1760.0, 0.4), (.accented, 1144.0, 0.6)] {
+            for i in [100, 173, 389, 1000] {
+                let t = Double(i) / 44100
+                let envelope = pow(1 - Double(i) / 2645, 2)
+                let expected = sin(2 * Double.pi * frequency * t) * envelope * gain
+                precondition(abs(sample(voice, i) - expected) < 0.0001)
+            }
+        }
+        print("Audio buffers preserve every PCM sample, duration, format and envelope for all six voices")
     }
 }

@@ -1,10 +1,10 @@
 import Foundation
 
 nonisolated enum ClickVoice: String, Codable, CaseIterable, Identifiable, Sendable {
-    case click, wood, bell
+    case click, wood, bell, lowPitch, highPitch, accented
     var id: String { rawValue }
     var title: String {
-        switch self { case .click: "Click"; case .wood: "Wood tap"; case .bell: "Bell" }
+        switch self { case .click: "Click"; case .wood: "Wood tap"; case .bell: "Bell"; case .lowPitch: "Low pitch"; case .highPitch: "High pitch"; case .accented: "Accented click" }
     }
 }
 

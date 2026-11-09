@@ -44,7 +44,8 @@ UUID, not a device name. A new triple-press reopens the firmware's 60-second
 advertising window. Bluetooth permission/status and connection errors are shown.
 Practice waits for beat/settings discovery. Start writes and verifies sensitivity,
 subscribes to beats/motion and uses the existing ML + strength filtering/audio
-pipeline. Sound preferences save locally. Settings are locked during practice.
+pipeline. Sound preferences save locally and are locked during practice; Bluetooth
+limits remain adjustable.
 Stopping, disconnecting, backgrounding, audio interruption or output changes stop
 playback; returning never silently resumes it. Keep the app open to practice.
 
@@ -69,7 +70,8 @@ From the repository root, with Xcode selected::
     bash Tools/check.sh
 
 The checks cover packet/formatting/history/CSV, recorder lifecycle, conducting,
-profile persistence, 1,080 ML parity fixtures and audio buffer generation.
+profile persistence, 1,080 ML parity fixtures, six audio voices, product timer
+boundaries, Bluetooth preference persistence and per-device nicknames.
 Unsigned builds do not install either app. Verify actual scanning, reconnects,
 profile handshake, sound, permission denial, interruptions and background/return
 on an iPhone with a baton. No firmware flash is needed for this repository move;
@@ -130,3 +132,60 @@ Opening-screen validation: unsigned iOS device and iPhone simulator builds passe
 Captured startup frames on the iPhone 17 simulator confirmed the full-screen blue,
 white note at changing rotation angles and automatic transition into practice.
 Actual iPhone startup and the system Reduce Motion setting still need device QA.
+
+
+Production Home, Settings and Help
+---------------------------------
+
+Home has top icon buttons for Sound, Settings and Help. The existing connection
+card stays on Home; while connected, a health card directly below it reports the
+actual connection and whether a valid six-axis motion packet arrived in the past
+three seconds. It also links to device details and shows remaining connection
+time when a limit is selected. Motion notifications start after discovery for
+health reporting, independently of starting practice. No battery percentage or
+sampling-rate estimate is inferred from motion or signal strength.
+
+Settings is a scrollable native form with practice preferences, the connected
+baton list and Bluetooth settings at the bottom. Search duration is 10, 30, 60 or
+120 seconds (default 30). Connection TTL is no limit (default), 5, 15, 30 or 60
+minutes, measured from successful connection. Values persist between launches.
+The one-second foreground timer stops scanning or disconnects/stops practice on
+expiry; changing a limit applies it to the current elapsed time. Elapsed time is
+monotonic. iOS suspension can delay enforcement in the background; the limit is
+checked again when returning, before starting practice. This is a phone-side
+policy and does not change the firmware's 60-second advertising window.
+
+One baton is supported at a time. Its name can be changed locally (up to 40
+characters); an empty nickname restores the advertised name. The nickname is
+keyed by the CoreBluetooth UUID and persists in this app, including scan lists.
+It is not written to firmware or shared with other phones. Details distinguish
+the iOS Bluetooth identifier from a hardware serial number and MAC address.
+Device Information serial/firmware/hardware fields are read only if the device
+actually exposes the standard 180A service and matching readable characteristics;
+the current firmware does not expose those fields. Unavailable values are never
+invented, and discovery can complete while the details screen is open.
+
+Sound preferences offer Click, Wood tap, Bell, Low pitch, High pitch and Accented
+click, with a Test sound button usable without a baton. Home can also preview
+the selected saved voice. Previews finish automatically, stop on leaving their
+page/backgrounding and cannot run during practice. Existing profile JSON and the
+three original voices remain compatible. All six voices use the same existing
+60 ms envelope; this does not implement first-beat accents or subdivisions.
+The additional shared voices also appear in the debug app's profile picker.
+
+Help is a scrollable Q&A with an expandable first-use guide and troubleshooting
+for discovery, permissions, silent strokes, audio routes, disconnects, health
+indicators and local names. The #0437F2 theme, Instrument Serif headings and
+opening animation are retained. See ``Docs/ProductTickets.rst`` for ticket scope.
+
+Per the requested app-only scope, adaptive sensor sampling, battery telemetry,
+firmware-side naming, wireless firmware updates, beat subdivisions and automatic
+measure accenting are omitted. They require firmware support or further product
+work; there are no switches that claim to enable them.
+
+App-only ticket validation (2026-11-09): both shared schemes passed unsigned iOS
+device builds; all seven host suites passed, including the new product preference
+suite. Temporary simulator preview entry points rendered Home, Settings, Help and
+Sound for layout review and were removed from source afterward. Simulator layouts
+retain the requested blue/serif styling. Physical connection/timeout enforcement,
+per-device naming and preview/practice audio still require on-device validation.
