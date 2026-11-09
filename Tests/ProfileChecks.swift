@@ -39,26 +39,18 @@ struct ProfileChecks {
                 UInt8(truncatingIfNeeded: time), UInt8(truncatingIfNeeded: time >> 8),
                 UInt8(truncatingIfNeeded: time >> 16), UInt8(truncatingIfNeeded: time >> 24), 0, 0, 80, 0]))
         }
-        for meter in 2...4 {
-            var counter = MeasureCounter()
-            for i in 0..<12 {
-                let p = try packet(UInt16(i), UInt32(i*600))
-                precondition(counter.advance(p, beatsPerMeasure: meter) == i%meter+1)
-            }
-            let missing = try packet(13, 7800)
-            precondition(counter.advance(missing, beatsPerMeasure: meter) == nil)
-            counter.reset()
-            precondition(counter.advance(missing, beatsPerMeasure: meter) == 1)
-            let pause = try packet(14, 11000)
-            precondition(counter.advance(pause, beatsPerMeasure: meter) == nil)
-            counter.reset()
-            precondition(counter.advance(pause, beatsPerMeasure: meter) == 1)
+        // Gaps and pauses remain playable; only stale/duplicate events are rejected.
+        func tryAccept(_ gate: inout BeatEventGate, _ seq: UInt16, _ time: UInt32) -> Bool {
+            gate.accept(try! packet(seq, time))
         }
-        var wrap = MeasureCounter()
-        let before = try packet(65535, UInt32.max - 100)
-        let after = try packet(0, 499)
-        precondition(wrap.advance(before, beatsPerMeasure: 4) == 1)
-        precondition(wrap.advance(after, beatsPerMeasure: 4) == 2)
+        var gate = BeatEventGate()
+        precondition(tryAccept(&gate, 1, 100))
+        precondition(tryAccept(&gate, 3, 700))
+        precondition(tryAccept(&gate, 4, 5000))
+        precondition(!tryAccept(&gate, 4, 5000))
+        gate = BeatEventGate()
+        precondition(tryAccept(&gate, 65535, UInt32.max - 100))
+        precondition(tryAccept(&gate, 0, 499))
         for sensitivity in DetectionSensitivity.allCases {
             precondition(ConductingSettingsPacket.encode(sensitivity) == Data([1,1,UInt8(sensitivity.rawValue),0]))
         }
@@ -71,6 +63,6 @@ struct ProfileChecks {
             }
         }
         precondition(sounds.count == 6)
-        print("Profile persistence/CRUD, validation, 2/3/4 measure count, gaps, wrap, settings and six sounds passed")
+        print("Profile persistence/CRUD, validation, continuous playback gaps, wrap, settings and six sounds passed")
     }
 }

@@ -21,6 +21,7 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
     let conductingProfiles = ConductingProfileStore()
     @ObservationIgnored private var pendingProfileSettings: Data?
     @ObservationIgnored private var profileSettingsApplied = false
+    @ObservationIgnored private var lastConductingMotionLog: TimeInterval = 0
     @ObservationIgnored private var beatSubscriptionTimeout: Task<Void, Never>?
     @ObservationIgnored private var central: CBCentralManager!
     @ObservationIgnored private var connectionTimeout: Task<Void, Never>?
@@ -62,6 +63,13 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
             conducting.fail("Create and select a profile first.")
             return
         }
+        if conducting.filterMode == .gesture {
+            guard let motion = batonMotionCharacteristic,
+                  motion.characteristic.properties.contains(.notify) else {
+                conducting.fail("ML filtering needs motion notifications. Select Peak + strength or reconnect.")
+                return
+            }
+        }
         conducting.start(profile: profile)
         guard conducting.isEnabled, let peripheral = usablePeripheral(for: settings) else { return }
         profileSettingsApplied = false
@@ -71,6 +79,9 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
         settings.error = nil
         peripheral.writeValue(payload, for: settings.characteristic, type: .withResponse)
         if !model.isNotifying && !model.notificationPending { setNotifications(true, for: model) }
+        if conducting.filterMode == .gesture, let motion = batonMotionCharacteristic,
+           !motion.isNotifying && !motion.notificationPending { setNotifications(true, for: motion) }
+        updateConductingReadiness()
         beatSubscriptionTimeout?.cancel()
         beatSubscriptionTimeout = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(10)) } catch { return }
@@ -82,7 +93,9 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
     }
 
     private func updateConductingReadiness() {
-        let ready = profileSettingsApplied && batonBeatCharacteristic?.isNotifying == true
+        let motionReady = conducting.filterMode != .gesture ||
+            (batonMotionCharacteristic?.isNotifying == true && batonMotionCharacteristic?.notificationPending == false)
+        let ready = motionReady && profileSettingsApplied && batonBeatCharacteristic?.isNotifying == true
             && batonBeatCharacteristic?.notificationPending == false
         conducting.notificationState(ready: ready)
         if ready { beatSubscriptionTimeout?.cancel() }
@@ -391,11 +404,22 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
             if model.isBatonBeat {
                 do {
                     let beat = try BatonBeatPacket(data: data)
-                    if model.isNotifying { conducting.receive(beat) }
+                    if model.isNotifying { conducting.receive(beat, receivedAt: receivedUptime) }
                     log("BEAT seq=\(beat.sequence) t=\(beat.uptimeMilliseconds) strength=\(beat.strength)")
                 } catch { log("BEAT DECODE ERROR: \(error.localizedDescription)") }
             }
-            if model.isBatonMotion { imuRecorder.receive(data, at: receivedAt, uptime: receivedUptime) }
+            if model.isBatonMotion {
+                imuRecorder.receive(data, at: receivedAt, uptime: receivedUptime)
+                if model.isNotifying, let packet = try? BatonMotionPacket(data: data) {
+                    conducting.receiveMotion(packet, receivedAt: receivedUptime)
+                }
+            }
+            // Keep every motion sample for ML/history/recording, but avoid dozens
+            // of terminal strings and UI mutations per second during playback.
+            if model.isBatonMotion && conducting.isEnabled {
+                if receivedUptime - lastConductingMotionLog < 1 { return }
+                lastConductingMotionLog = receivedUptime
+            }
             log("RX [\(characteristic.uuid)]: \(data.isEmpty ? "(empty)" : hexString(from: data))")
         } else { log("RX [\(characteristic.uuid)]: no value") }
         if let packet = model.motionPacket {
@@ -410,6 +434,11 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
         model.notificationPending = false
         model.isNotifying = characteristic.isNotifying
         if model.isBatonMotion, !model.isNotifying { imuRecorder.stop(reason: "Motion notifications ended") }
+        if model.isBatonMotion, conducting.isEnabled, conducting.filterMode == .gesture {
+            if let error { stopConducting(); conducting.fail("Motion notifications failed: \(error.localizedDescription)") }
+            else if !model.isNotifying { stopConducting(reason: "Motion notifications ended. Enable Conducting Mode to retry.") }
+            else { updateConductingReadiness() }
+        }
         if model.isBatonBeat {
             if let error { conducting.fail("Beat notifications failed: \(error.localizedDescription)") }
             else if !model.isNotifying { stopConducting(reason: "Beat notifications ended.") }

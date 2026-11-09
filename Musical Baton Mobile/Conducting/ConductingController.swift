@@ -10,13 +10,20 @@ final class ConductingController {
     private(set) var beatCount = 0
     private(set) var lastBeat: BatonBeatPacket?
     private(set) var activeProfile: ConductingProfile?
-    private(set) var beatInMeasure = 0
-    private(set) var needsDownbeat = false
-    @ObservationIgnored private var measure = MeasureCounter()
-    private(set) var status = "Enable Conducting Mode to play a click for each detected stop."
+    var filterMode: BeatFilterMode = .gesture
+    var strengthThreshold = 50
+    private(set) var filteredCount = 0
+    private(set) var gestureLabel = "Warming up"
+    private(set) var lastFilterReason: String?
+    @ObservationIgnored private var gestureFilter: GestureFilter?
+    private(set) var status = "Enable Conducting Mode to play filtered beats."
     private(set) var error: String?
     @ObservationIgnored private var gate = BeatEventGate()
-    @ObservationIgnored private var players: [AVAudioPlayer] = []
+    @ObservationIgnored private var audio: BeatAudioEngine?
+    private(set) var audioBufferMS: Double = 0
+    private(set) var audioOutputMS: Double = 0
+    private(set) var audioRoute = "Not active"
+    private(set) var callbackToScheduleMS: Double?
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
 
     init() {
@@ -52,21 +59,24 @@ final class ConductingController {
         guard !isEnabled, profile.isValid else { return }
         error = nil
         do {
+            gestureFilter = filterMode == .gesture ? GestureFilter(tree: try GestureTree.bundled()) : nil
+            gestureLabel = filterMode == .gesture ? "Warming up" : "Off"
+            filteredCount = 0
+            lastFilterReason = nil
+            callbackToScheduleMS = nil
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
-            try session.setPreferredIOBufferDuration(0.005)
+            // Exclusive playback gives the system more freedom to honor a short buffer.
+            // Enabling Conducting Mode intentionally interrupts other media.
+            try session.setCategory(.playback, mode: .default, options: [])
+            try session.setPreferredIOBufferDuration(0.0029)
             try session.setActive(true)
-            players = []
-            for (voice, accented) in [(profile.downbeatSound, true), (profile.otherBeatSound, false)] {
-                let prepared = try AVAudioPlayer(data: BeatSound.wavData(voice: voice, accented: accented))
-                guard prepared.prepareToPlay() else { throw AudioError.prepare }
-                players.append(prepared)
-            }
+            audio = try BeatAudioEngine(voice: profile.otherBeatSound)
+            try audio?.start()
+            audioBufferMS = session.ioBufferDuration * 1000
+            audioOutputMS = session.outputLatency * 1000
+            audioRoute = session.currentRoute.outputs.map(\.portName).joined(separator: ", ")
             activeProfile = profile
             beatCount = 0
-            beatInMeasure = 0
-            needsDownbeat = false
-            measure.reset()
             lastBeat = nil
             isEnabled = true
             notificationState(ready: false)
@@ -80,16 +90,18 @@ final class ConductingController {
     func notificationState(ready: Bool) {
         guard isEnabled else { return }
         isReady = ready
-        status = ready ? "Ready. Make beat 1 next; each detected beat advances the measure."
-                       : "Applying the profile and enabling beat notifications…"
+        status = ready ? "Ready. Each accepted beat plays one sound."
+                       : "Applying sensitivity and enabling notifications…"
     }
 
     func stop(reason: String = "Conducting Mode is off.") {
-        let hadAudio = !players.isEmpty || isEnabled
+        let hadAudio = audio != nil || isEnabled
         isEnabled = false
         isReady = false
-        players.forEach { $0.stop() }
-        players = []
+        audio?.stop()
+        audio = nil
+        gestureFilter?.reset()
+        gestureLabel = filterMode == .gesture ? "Warming up" : "Off"
         status = reason
         if hadAudio { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
     }
@@ -107,47 +119,40 @@ final class ConductingController {
         error = nil
     }
 
-    func receive(_ packet: BatonBeatPacket) {
-        guard gate.accept(packet), isEnabled, isReady, let profile = activeProfile else { return }
-        guard !needsDownbeat, let position = measure.advance(packet, beatsPerMeasure: profile.beatsPerMeasure) else {
-            needsDownbeat = true
-            status = "A pause or missing event interrupted the count. Tap Next beat is 1 to resume."
+    func receive(_ packet: BatonBeatPacket, receivedAt: TimeInterval) {
+        guard gate.accept(packet), isEnabled, isReady, activeProfile != nil else { return }
+        let label = gestureFilter?.currentLabel(at: ProcessInfo.processInfo.systemUptime)
+        gestureLabel = filterMode == .gesture ? (label ?? "Warming up") : "Off"
+        if let reason = BeatPlaybackPolicy.rejection(strength: packet.strength,
+                threshold: strengthThreshold, mode: filterMode, label: label) {
+            filteredCount += 1
+            lastFilterReason = reason
             return
         }
-        if playClick(downbeat: position == 1) {
+        lastFilterReason = nil
+        if playClick() {
+            callbackToScheduleMS = max(0, ProcessInfo.processInfo.systemUptime - receivedAt) * 1000
             lastBeat = packet
-            beatInMeasure = position
             beatCount += 1
         }
     }
 
-    func resetDownbeat() {
-        guard isEnabled, isReady else { return }
-        measure.reset()
-        beatInMeasure = 0
-        needsDownbeat = false
-        status = "Ready for beat 1. Make the next stroke on your downbeat."
-    }
-
-    func testSound(downbeat: Bool = true) {
+    func receiveMotion(_ packet: BatonMotionPacket, receivedAt: TimeInterval) {
         guard isEnabled else { return }
-        _ = playClick(downbeat: downbeat)
+        gestureFilter?.add(packet, receivedAt: receivedAt)
+        gestureLabel = filterMode == .gesture ? (gestureFilter?.currentLabel(at: receivedAt) ?? "Warming up") : "Off"
     }
 
-    private func playClick(downbeat: Bool) -> Bool {
-        guard players.count == 2 else { return false }
-        players.forEach { $0.stop() }
-        let player = players[downbeat ? 0 : 1]
-        player.currentTime = 0
-        guard player.play() else {
-            fail("The phone could not play the click. Try enabling the mode again.")
+    func testSound() {
+        guard isEnabled, isReady else { return }
+        _ = playClick()
+    }
+
+    private func playClick() -> Bool {
+        guard audio?.trigger() == true else {
+            fail("The audio engine stopped. Enable Conducting Mode again to restart it.")
             return false
         }
         return true
-    }
-
-    private enum AudioError: LocalizedError {
-        case prepare
-        var errorDescription: String? { "The phone could not prepare the click sound." }
     }
 }

@@ -31,7 +31,7 @@ final class ConductingProfileStore {
                 self.error = "Saved profiles could not be loaded. Create a new profile to replace the invalid saved data."
             }
         } else {
-            let starter = ConductingProfile(name: "Four-beat practice")
+            let starter = ConductingProfile(name: "Baton practice")
             profiles = [starter]
             selectedID = starter.id
             persist()

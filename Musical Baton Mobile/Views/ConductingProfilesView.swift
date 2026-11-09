@@ -9,7 +9,7 @@ struct ConductingProfilesView: View {
     var body: some View {
         List {
             Section {
-                Text("Save your beat count, sounds, and preferred sensitivity. These profiles are manual settings; gesture training is not included yet.")
+                Text("Save your beat sound and preferred sensitivity. The optional gesture filter uses a bundled model; profiles do not train it.")
                     .foregroundStyle(.secondary)
                 if let error = store.error { Text(error).foregroundStyle(.red) }
                 Button("New Profile", systemImage: "plus") { editing = ConductingProfile() }
@@ -21,7 +21,7 @@ struct ConductingProfilesView: View {
                             HStack {
                                 VStack(alignment: .leading) {
                                     Text(profile.name).font(.headline)
-                                    Text("\(profile.beatsPerMeasure) beats · \(profile.sensitivity.title)")
+                                    Text("\(profile.otherBeatSound.title) · \(profile.sensitivity.title)")
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
@@ -66,9 +66,6 @@ private struct ConductingProfileEditor: View {
         Form {
             Section("Profile") {
                 TextField("Name", text: $profile.name)
-                Picker("Beats per measure", selection: $profile.beatsPerMeasure) {
-                    ForEach(2...4, id: \.self) { Text("\($0)").tag($0) }
-                }
                 Picker("Sensitivity", selection: $profile.sensitivity) {
                     ForEach(DetectionSensitivity.allCases) { Text($0.title).tag($0) }
                 }
@@ -76,13 +73,10 @@ private struct ConductingProfileEditor: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
             Section("Sounds") {
-                Picker("Beat 1", selection: $profile.downbeatSound) {
+                Picker("Beat sound", selection: $profile.otherBeatSound) {
                     ForEach(ClickVoice.allCases) { Text($0.title).tag($0) }
                 }
-                Picker("Other beats", selection: $profile.otherBeatSound) {
-                    ForEach(ClickVoice.allCases) { Text($0.title).tag($0) }
-                }
-                Text("Beat 1 is accented. Preview both sounds after enabling the profile in Conducting Mode.")
+                Text("Every accepted beat uses this sound. Preview it after enabling Conducting Mode.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
             if let error = store.error { Text(error).foregroundStyle(.red) }

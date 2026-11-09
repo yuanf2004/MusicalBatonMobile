@@ -53,50 +53,66 @@ Features
 Conducting profiles and sound
 -----------------------------
 
-Tap **Saved Profiles** on the scanner to create, name, edit, select, or delete a
-profile before connecting. Profiles persist locally across app relaunches. Each
-stores 2, 3, or 4 beats per measure, a detection sensitivity, a beat-1 sound, and
-an other-beats sound. Voices are Click, Wood Tap, and Bell; beat 1 has a higher,
-stronger accent. A Four-beat practice profile is created on first use. These are
-manual settings profiles; no gesture recording/training or automatic meter or
-downbeat recognition is implemented. Sensor stillness calibration still happens
-in the MCU after boot or a sampling gap.
+Tap **Saved Profiles** to save a name, sensitivity, and one beat sound. Existing
+profiles still load: their former other-beats voice becomes the single voice;
+legacy meter/downbeat fields remain stored for compatibility but are unused.
+Playback is unmetered, with no downbeat/reset button. A missed beat or pause never
+locks playback. No missing sounds are invented or replayed.
 
-After connecting, open **Conducting Mode**, use **Choose or Edit Profiles** if
-needed, and enable the toggle. Editing/selecting profiles stops an active mode.
-The app snapshots the chosen settings for the session, prepares both sounds,
-writes sensitivity to the baton, waits for acknowledgement, reads the setting
-back, and waits for beat subscription confirmation. Sound events remain disabled
-until setup succeeds. Older firmware without settings support shows an update
-message; write/read/subscription failures or a ten-second timeout stop setup.
-The first new detected beat after Ready is counted as beat 1. **Test Beat 1 Sound**
-and **Test Other Beat Sound** preview the voices without advancing the count.
-Use **Next beat is 1** to align the next gesture with your downbeat.
+Conducting Mode now has two filtering choices (change them while the mode is off):
 
-Each received MCU beat advances the selected 2/3/4-beat cycle. BPM may be zero;
-there is no fixed-tempo metronome or invented missing click. After a gap in beat
-sequence numbers or more than two seconds between events, sounds pause and the
-screen asks for **Next beat is 1**. This avoids continuing an uncertain accent
-pattern. An MCU missed/extra detection can still shift the count without a BLE
-sequence gap; use the reset button to realign. The app counts events and cannot
-infer actual beat number from motion direction.
+* **Peak + strength** matches Zach's default PC ``peak`` mode: accept firmware
+  events only when strength strictly exceeds the cutoff (default 50).
+* **Peak + ML (experimental)** is the mobile default for this update. It also
+  uses Zach's v1 decision tree to suppress idle/warming-up motion. Down, left,
+  right, and diagonal-up all allow the same sound. There is no confidence cutoff,
+  conducting-pattern validation, or separate non-conducting-motion class.
 
-Detection remains in the MCU. Flash ``west flash -d build-lsm6dsox-dk`` from the
-adjacent MusicalBaton repository, then triple-click to advertise and reconnect.
-Raw motion notifications/parsing are independent of Conducting Mode. Profiles
-are stored on the phone. Only the selected sensitivity is sent to the MCU; it is
-volatile across a firmware reboot and is reapplied on each mode activation.
+The default strength cutoff is 50, adjustable from 0 through 99. Mode/cutoff are
+session controls and return to defaults on app launch; saved profiles retain only
+their existing fields. The screen shows played/filtered counts, latest gesture,
+and the last rejection reason. Test Sound bypasses the beat filters.
 
-The sensitivity presets are:
+On activation, the app loads the bundled tree, prepares the selected sound,
+writes and reads back sensitivity, and subscribes to beats. ML mode also subscribes
+to motion automatically, independently of the inspector's Parse Motion toggle.
+Sound remains disabled until setup succeeds; failures or a ten-second timeout
+stop setup. Motion subscriptions remain available to graphs/recording after sound
+is disabled. Only sensitivity is written to the baton. Firmware and BLE packet
+layouts are unchanged.
 
-* Balanced (0): arm at 30 deg/s, require 80 mg, trigger below 55% of stroke peak.
-* Deliberate (1): arm at 40 deg/s, require 120 mg, trigger below 45% of peak.
-* Gentle (2): arm at 22 deg/s, require 55 mg, trigger below 60% of peak.
+The model is exported from Zach commit ``ec6c752``, artifact
+``models/gesture_v1/gesture_tree.joblib``. ``Conducting/gesture_v1.json`` contains
+all 689 nodes, exact thresholds, leaf labels, feature names, and source SHA-256.
+Inference is native Swift, offline, without Python/Core ML dependencies. Features
+match the PC's 48 values: mean, population standard deviation, minimum, maximum,
+RMS and peak-to-peak for six axes plus acceleration/gyro norms. Prediction casts
+features to float32 like sklearn. The last five predictions vote, with ties going
+to the earliest label in the vote window. See sklearn's prediction contract:
+https://scikit-learn.org/stable/modules/generated/sklearn.tree.DecisionTreeClassifier.html
 
-All retain the stop-speed ceiling, minimum stroke duration, beat separation,
-and fresh-motion rearm checks. Gentle can increase false detections; these presets
-need hardware validation. A preset change clears stroke/tempo tracking but keeps
-sensor calibration. Calibration and filtering are not saved in a profile.
+Important BLE adaptation: Zach's PC uses roughly 40 Hz USB diagnostics and requires
+six samples spanning 170 ms in a 200 ms window. The phone gets roughly 19–20 Hz,
+so it requires four real samples spanning at least 140 ms in that same window.
+No interpolation is used. Five votes therefore cover more time on mobile than
+on USB. The model was trained at a much higher sampling rate; feature/inference
+parity does NOT validate accuracy at either live rate. This mode is experimental,
+not a claim of equivalent gesture accuracy or latency. Peak + strength is available
+for comparison. All window times use device timestamps; UInt32 wrap is supported.
+
+Invalid samples, missing motion sequences or a device-time gap over 100 ms clear
+history/votes. Host motion silence over 250 ms makes the classification unusable.
+Fresh data warms up automatically; there is no manual reset. At beat arrival the
+latest available label gates sound immediately, as on the PC. The app does not
+wait for future motion or retrospectively play suppressed beats. Beat duplicates
+and backward timestamps are still rejected. Beat sequence gaps and long pauses
+are accepted and never stop the mode.
+
+Zach firmware still performs calibration and peak detection. Its Balanced,
+Deliberate and Gentle presets arm at 30/40/22 deg/s with 80/120/55 mg acceleration
+floors, confirm speed below 85% of peak, and rearm below 55/45/60% of peak
+(respectively, with the minimum arm-speed floor). The app does not implement
+those firmware thresholds itself.
 
 Bluetooth protocol
 ~~~~~~~~~~~~~~~~~~
@@ -112,7 +128,7 @@ unchanged 20-byte packet. Notify-only beat characteristic
 * Byte 10: motion strength 0-100; byte 11: reserved zero.
 
 The event sequence identifies transport events, not a beat number within a bar.
-The app chooses sounds using the selected profile and its local measure counter.
+The app plays the selected profile’s single sound after the strength/ML gates.
 No audio asset ID or audio data needs to travel from the baton.
 
 New read/write characteristic ``12345678-1234-5678-1234-56789abcdef3`` accepts
@@ -134,8 +150,8 @@ Audio and lifecycle
 ~~~~~~~~~~~~~~~~~~~
 
 Sound uses the phone's media volume and current route. Use the phone speaker for
-initial timing checks. The playback category allows sound in silent mode and mixes
-with other audio; no microphone permission is requested. Sounds are generated in
+initial timing checks. The playback category allows sound in silent mode and interrupts
+other media to prioritize a short hardware buffer; no microphone permission is requested. Sounds are generated in
 memory and prepared before receiving beats. Leaving Conducting Mode, disconnecting,
 app inactivity, service changes, notification failure/loss, audio interruption, or
 output-route changes stop playback and require explicit reactivation. A beat
@@ -144,18 +160,19 @@ subscription may remain enabled while sound is off, so terminal RX can continue.
 Hardware acceptance checks
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-1. Create a named three-beat profile, select different beat-1/other voices, close
-   and relaunch the app, and verify the saved selection. Edit and delete a profile.
-2. Install updated firmware/app, connect, and enable Conducting Mode. Confirm
-   Ready appears only after settings readback and subscription succeed.
-3. Test both sounds. Conduct on the downbeat: hear accent, normal, normal, repeat.
-   Try 2 and 4 beats per measure. Test Sound must not advance the measure.
-4. Stop for over two seconds, then gesture: mode requests a count reset and plays
-   no uncertain accent. Tap Next beat is 1 and resume. Compare gentle/deliberate
-   profiles against UART beats and ordinary-motion false triggers.
+1. Create/select a profile and verify its sound/sensitivity persist after relaunch.
+   Verify existing saved profiles load and use their former other-beats sound.
+2. In Peak + strength mode, verify cutoff 50 rejects strength 50 and admits 51.
+   Test Sound should play without incrementing the played-beat count.
+3. In ML mode, verify motion subscribes automatically with Parse Motion off.
+   Confirm warming-up/idle suppress sound and active directional motion can pass.
+   Compare with PC peak-ml on real gestures; record false positives/negatives.
+4. Pause over two seconds and introduce a beat sequence gap: playback should
+   resume on the next accepted event without any reset. Motion loss should briefly
+   warm up again, not use a stale label or permanently disable the mode.
 5. Disconnect, background/lock, or interrupt audio: no automatic sound resume.
-   Test old firmware's unavailable state and generic settings writes stopping mode.
-6. Verify existing motion graphs, CSV recording, and BLE inspection still work.
+   Failed notification/setup should show a useful error. Re-enable to retry.
+6. Verify existing graphs, recording, BLE inspection and settings writes still work.
 
 Run on an iPhone
 ----------------
@@ -373,7 +390,8 @@ Conducting packet and sound checks::
 The tests cover packet layout, sliced Data, malformed input, UUID matching,
 duplicate/backward events, sequence/time wrap, zero-BPM acceptance, and generated
 WAV structure. They do not verify live radio/audio timing or phone lifecycle events.
-Audio uses a preprepared AVAudioPlayer; see Apple's prepareToPlay documentation:
+Earlier versions used AVAudioPlayer; the current implementation uses a running
+AVAudioEngine and preloaded PCM buffer. Historical prepareToPlay reference:
 https://developer.apple.com/documentation/avfaudio/avaudioplayer/preparetoplay()
 
 Conducting Mode validation (2026-10-26): unsigned iOS device build passed with
@@ -399,3 +417,92 @@ checking passed. Profile persistence/CRUD, corrupt-save recovery, validation,
 variants passed host checks. DK build and detector sensitivity/gap checks passed.
 Live phone audio, BLE settings handshake, and hardware sensitivity accuracy still
 require the manual checks above; the agent did not install or flash either device.
+
+Mobile filtering validation (2026-11-09)
+--------------------------------------
+
+The Swift feature extractor and tree matched the original Python model on 1,080
+windows drawn from all six recorded sessions, including sparse USB/BLE-sized
+windows. These are implementation-parity fixtures, not an independent accuracy
+benchmark (the model has seen these sessions). Export used installed sklearn 1.7.2
+to read a 1.9.1 artifact; it emitted a version warning. The frozen Python features
+and predictions plus source hash make the conversion check reproducible.
+
+Run the new host checks::
+
+    xcrun swiftc -module-cache-path /tmp/musical-baton-swift-cache \
+      'Musical Baton Mobile/Models/BatonMotionPacket.swift' \
+      'Musical Baton Mobile/Conducting/GestureFilter.swift' Tests/GestureChecks.swift \
+      -o /tmp/musical-baton-gesture-checks
+    /tmp/musical-baton-gesture-checks "$PWD"
+
+Tests cover strict strength boundaries, idle/directional gating, warmup, stale
+motion, packet loss, automatic recovery, and clock/sequence wrap. Profile tests
+now verify continuous acceptance after beat gaps/pauses rather than measure resets.
+To regenerate the bundled tree and fixtures from a trusted Zach checkout (requires
+numpy, joblib and scikit-learn)::
+
+    python3 Tools/export_gesture_model.py /path/to/SmartBatonZach/MusicalBaton
+
+Phone audio still uses the existing 60 ms selectable voices, rather than the PC's
+configurable default 800 Hz/15 ms beep. No hardware timing, on-phone ML accuracy,
+or simultaneous BLE audio/recording validation has been performed by the agent.
+
+Final validation: unsigned iOS device build succeeded with Xcode, and existing
+formatting/packet/history/graph/CSV, recorder lifecycle, conducting sound and
+profile regression checks passed. New ML parity and filtering checks passed.
+The exported JSON was included in the built app bundle. No firmware was changed.
+
+Low-latency audio update (2026-11-09)
+-----------------------------------
+
+Conducting Mode now starts AVAudioEngine/AVAudioPlayerNode once per session,
+converts the selected existing WAV voice to a reusable float PCM buffer before
+setup completes, and schedules it with ``.interrupts`` on each accepted beat.
+The node stays playing between cues, avoiding per-beat stop/seek/start work;
+new triggers replace pending audio rather than accumulating stale clicks. Engine
+failure stops the mode with an error. Disabling the mode discards scheduled audio
+and stops/resets the engine; existing interruption, route-change and background
+handling remain. Tone duration/envelope and detector/ML/strength gates are unchanged.
+
+The audio session requests a 2.9 ms buffer (formerly 5 ms) without mixing other
+media. Enabling Conducting Mode therefore interrupts other media. iOS chooses the
+actual buffer: the screen displays actual ``ioBufferDuration``, reported
+``outputLatency``, output route, and the last accepted beat's time from BLE callback
+entry to audio scheduling. This last figure excludes time waiting on the main
+queue, radio delivery, detector confirmation and actual speaker onset. Values are
+session diagnostics, not an end-to-end latency claim. Wireless audio routes may
+add substantial latency; validate with the built-in speaker first.
+
+While conducting, verbose motion RX/decoded terminal lines are limited to once
+per second. All samples still reach ML, history and the CSV recorder, and beat
+notifications/errors remain logged. CoreBluetooth still uses its existing main
+queue, so heavy UI work can delay callback entry. No phone/device clock sync was
+added, and motion stays at its existing BLE rate. Peak + ML still uses the latest
+available classification without waiting for future data.
+
+The companion Zach firmware requests 15 ms/zero-latency connection parameters
+after five seconds, reports negotiated parameters, prioritizes beat submission
+before motion telemetry, and suppresses CD UART prints while connected. iOS may
+choose a longer interval. Install this app and flash that DK build to test both
+parts. Existing protocol versions/UUIDs are unchanged. Test first/rapid/repeated
+cues, a long pause, mode off/on, unplugging headphones, audio interruption,
+backgrounding, reconnecting, and all sound profiles on an actual iPhone.
+
+Unsigned iOS build passed. AudioBufferChecks verifies each sample, envelope,
+format and duration of all three voices. Run it on macOS::
+
+    xcrun swiftc -module-cache-path /tmp/musical-baton-swift-cache \
+      'Musical Baton Mobile/Models/ConductingProfile.swift' \
+      'Musical Baton Mobile/Conducting/BeatSound.swift' \
+      'Musical Baton Mobile/Conducting/BeatAudioEngine.swift' \
+      Tests/AudioBufferChecks.swift -o /tmp/baton-audio-buffer-checks
+    /tmp/baton-audio-buffer-checks
+
+Apple references:
+https://developer.apple.com/library/archive/qa/qa1631/_index.html
+https://developer.apple.com/documentation/avfaudio/avaudioplayernode
+
+Hardware radio/audio timing has not been measured by the agent; no flash or
+installation was performed. A smaller requested buffer is not guaranteed, and
+neither the 60 ms cue duration nor the ML window equals playback onset latency.
