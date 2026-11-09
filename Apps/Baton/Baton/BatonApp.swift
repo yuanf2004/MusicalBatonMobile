@@ -19,7 +19,7 @@ struct PracticeView: View {
     private var canConduct: Bool {
         manager.isConnected && !manager.isDisconnecting && !manager.isDiscoveringServices &&
         manager.batonBeatCharacteristic != nil && manager.batonSettingsCharacteristic != nil &&
-        manager.conductingProfiles.selected != nil
+        manager.conductingProfiles.selected != nil && !manager.isRenamingBaton
     }
 
     var body: some View {
@@ -229,7 +229,7 @@ private struct ConnectionView: View {
                     } else {
                         ForEach(manager.devices.filter(\.isConnectable)) { device in
                             Button { session.connect(device) } label: {
-                                Label(session.preferences.name(id: device.id, fallback: device.name), systemImage: "music.note")
+                                Label(device.name, systemImage: "music.note")
                             }
                         }
                         if manager.devices.isEmpty {

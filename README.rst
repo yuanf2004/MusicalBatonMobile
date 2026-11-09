@@ -155,15 +155,19 @@ monotonic. iOS suspension can delay enforcement in the background; the limit is
 checked again when returning, before starting practice. This is a phone-side
 policy and does not change the firmware's 60-second advertising window.
 
-One baton is supported at a time. Its name can be changed locally (up to 40
-characters); an empty nickname restores the advertised name. The nickname is
-keyed by the CoreBluetooth UUID and persists in this app, including scan lists.
-It is not written to firmware or shared with other phones. Details distinguish
-the iOS Bluetooth identifier from a hardware serial number and MAC address.
-Device Information serial/firmware/hardware fields are read only if the device
-actually exposes the standard 180A service and matching readable characteristics;
-the current firmware does not expose those fields. Unavailable values are never
-invented, and discovery can complete while the details screen is open.
+One baton is supported at a time. With the name-enabled firmware, Settings →
+Connected batons → Your baton can change the device's actual Bluetooth name.
+Names have a 20-byte UTF-8 limit, persist on the baton, and appear to other phones
+on the next advertising session. Save is disabled during practice. The app writes
+the new name, then checks status/readback until the firmware confirms persistence;
+a write ACK alone is never shown as success. Old firmware shows an upgrade hint.
+Legacy local nicknames remain stored for compatibility but no longer override the
+real name in production discovery or connected views.
+
+Details distinguish the iOS Bluetooth identifier from a hardware serial number
+and MAC address. Standard Device Information fields appear only when actually
+exposed by firmware. The current firmware has no such fields; values are never
+invented, and discovery can finish while the details screen is open.
 
 Sound preferences offer Click, Wood tap, Bell, Low pitch, High pitch and Accented
 click, with a Test sound button usable without a baton. Home can also preview
@@ -179,7 +183,7 @@ indicators and local names. The #0437F2 theme, Instrument Serif headings and
 opening animation are retained. See ``Docs/ProductTickets.rst`` for ticket scope.
 
 Per the requested app-only scope, adaptive sensor sampling, battery telemetry,
-firmware-side naming, wireless firmware updates, beat subdivisions and automatic
+wireless firmware updates, beat subdivisions and automatic
 measure accenting are omitted. They require firmware support or further product
 work; there are no switches that claim to enable them.
 
@@ -189,3 +193,37 @@ suite. Temporary simulator preview entry points rendered Home, Settings, Help an
 Sound for layout review and were removed from source afterward. Simulator layouts
 retain the requested blue/serif styling. Physical connection/timeout enforcement,
 per-device naming and preview/practice audio still require on-device validation.
+
+
+Device-side naming protocol
+---------------------------
+
+The production app already used the shared service UUID, not a Smart Baton name
+filter. It now centralizes that identity in ``BatonIdentity``. All batons advertise
+``12345678-1234-5678-1234-56789abcdef0``; the firmware places it in the primary
+advertisement and its current full name in the scan response. Each CoreBluetooth
+peripheral UUID identifies an individual baton. These are discovery identifiers,
+not authentication. Duplicate names remain discoverable as separate peripherals.
+
+New Read/Write-with-response characteristic:
+``12345678-1234-5678-1234-56789abcdef4``. Write raw UTF-8 (1–20 bytes, no NUL or
+control characters). Read version 1, then status 0=saved / 1=saving / 2=failed,
+then the committed name. The app polls every 200 ms after the write ACK, for up
+to about eight seconds; an absent ACK times out after ten seconds. A saved status
+with an exact name match confirms success. Rejection, save failure, disconnection,
+GATT service changes and invalid responses never report success. On connection,
+the app reads this characteristic to avoid depending on an iOS cached name.
+
+Firmware source/build lives at the supplied ``SmartBatonZach/MusicalBaton``
+repository. Flash its name-enabled DK build, install this iOS build, connect,
+rename, wait for confirmation, then reconnect/reboot and scan from another phone.
+Default advertising name is still Smart Baton until changed. Names survive normal
+reboot but an erase/recover clears saved settings. Other phones may cache names
+briefly. Existing motion/beat/settings packets and generic debug scanning remain
+compatible; the debug inspector can read the new raw status/name characteristic.
+
+Validation: both iOS schemes build unsigned and existing regressions pass. New
+identity checks cover UTF-8 byte limits, malformed replies, UUID matching and
+saved/saving/failed confirmation rules. Firmware host checks cover deferred save,
+restore and failure behavior; the DK builds successfully. No app installation,
+flash or physical BLE rename/reboot/two-phone validation was performed.

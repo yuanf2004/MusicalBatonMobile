@@ -19,3 +19,5 @@ compile "$core/Models/ConductingProfile.swift" "$core/Conducting/BeatSound.swift
 "$out/audio"
 compile Apps/Baton/Baton/ProductPreferences.swift Tests/ProductPreferenceChecks.swift -o "$out/product"
 "$out/product"
+compile "$core/Models/BatonMotionPacket.swift" "$core/Models/BatonIdentity.swift" Tests/BatonIdentityChecks.swift -o "$out/identity"
+"$out/identity"

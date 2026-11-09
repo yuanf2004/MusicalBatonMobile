@@ -43,7 +43,7 @@ struct SettingsView: View {
                     }
                 } else {
                     Text("No baton connected").foregroundStyle(.secondary)
-                    Text("Connect from Home to view details or give your baton a nickname.")
+                    Text("Connect from Home to view details or rename your baton.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Text("One baton can be connected at a time.").font(.footnote).foregroundStyle(.secondary)
@@ -72,23 +72,37 @@ struct SettingsView: View {
 
 struct BatonDetailsView: View {
     let session: ProductSession
-    @State private var nickname = ""
+    @State private var deviceName = ""
     @State private var renameError: String?
 
     var body: some View {
         Form {
             if session.manager.isConnected, let device = session.manager.activeDevice {
-                Section("Name on this iPhone") {
-                    TextField("Baton nickname", text: $nickname)
+                Section("Baton Bluetooth name") {
+                    TextField("Baton name", text: $deviceName)
                         .onSubmit { saveName(device.id) }
-                    Button("Save name") { saveName(device.id) }
-                        .disabled(nickname.trimmingCharacters(in: .whitespacesAndNewlines).count > 40)
-                    Text("Up to 40 characters. A blank name restores the advertised name. This nickname is saved only in this app; it doesn't rename the baton for other phones.")
-                        .font(.footnote).foregroundStyle(.secondary)
+                        .disabled(session.manager.isRenamingBaton || session.manager.conducting.isEnabled)
+                    Button(session.manager.isRenamingBaton ? "Saving on baton…" : "Save on baton") { saveName(device.id) }
+                        .disabled(session.manager.batonNameCharacteristic == nil || session.manager.isRenamingBaton ||
+                                  session.manager.conducting.isEnabled || (try? BatonIdentity.validatedName(deviceName)) == nil)
+                    if session.manager.batonNameCharacteristic == nil {
+                        Text("Install the name-enabled baton firmware to change this device's Bluetooth name.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    } else {
+                        Text("Saved on the baton and kept after reboot. Other phones see this name the next time it advertises. Use 1–20 UTF-8 bytes; emoji and accented letters may use several bytes.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    if session.manager.conducting.isEnabled {
+                        Text("Stop practice before renaming your baton.").font(.footnote).foregroundStyle(.secondary)
+                    }
+                    if let error = session.manager.batonNameError { Text(error).foregroundStyle(.red) }
+                    if let message = session.manager.batonNameMessage { Text(message).foregroundStyle(.secondary) }
                     if let renameError { Text(renameError).foregroundStyle(.red) }
                 }
                 Section("Identity") {
-                    LabeledContent("Advertised name", value: device.name)
+                    LabeledContent("Bluetooth name", value: session.deviceName)
+                    Text("All batons share the same service identifier, so changing this name does not affect discovery.")
+                        .font(.footnote).foregroundStyle(.secondary)
                     VStack(alignment: .leading, spacing: 8) {
                         Text("iPhone Bluetooth identifier").font(.headline)
                         Text(device.id.uuidString).font(.caption.monospaced()).textSelection(.enabled)
@@ -114,9 +128,12 @@ struct BatonDetailsView: View {
             }
         }
         .batonPage("Your baton")
+        .onChange(of: session.manager.batonDeviceName) { _, name in
+            if let name, !session.manager.isRenamingBaton { deviceName = name }
+        }
         .onAppear {
             guard let d = session.manager.activeDevice else { return }
-            nickname = session.preferences.nicknames[d.id.uuidString] ?? ""
+            deviceName = session.manager.batonDeviceName ?? d.name
             for model in session.manager.services.filter({ $0.service.uuid == CBUUID(string: "180A") }).flatMap(\.characteristics) {
                 if ["2A25", "2A26", "2A27"].contains(model.characteristic.uuid.uuidString),
                    model.characteristic.properties.contains(.read), !model.readPending {
@@ -127,8 +144,8 @@ struct BatonDetailsView: View {
     }
     private func saveName(_ id: UUID) {
         guard session.manager.isConnected, session.manager.activeDevice?.id == id else { return }
-        if session.preferences.rename(id: id, name: nickname) { renameError = "Name saved." }
-        else { renameError = "Choose a name with no more than 40 characters." }
+        renameError = nil
+        session.manager.renameBaton(deviceName)
     }
     private func reportedValue(_ uuid: String) -> String? {
         guard let value = session.manager.services.first(where: { $0.service.uuid == CBUUID(string: "180A") })?
@@ -162,7 +179,8 @@ struct HelpView: View {
                 qa("Why are some movements silent?", "Practice filters out weak strokes and idle motion. Hold still for a moment before starting. Only accepted beats make a sound; pauses and missed beats are not replayed.")
                 qa("Why did practice stop?", "Leaving the app, disconnecting, a phone call, or changing headphones can stop playback. A connection time limit can also disconnect your baton. Return to Home, reconnect if needed and tap Start practice.")
                 qa("What do the health indicators mean?", "Connected means the Bluetooth link is active. Receiving motion means a valid motion packet arrived within the past three seconds. Waiting for data is not a battery or sensor failure diagnosis. The current firmware doesn't report battery charge.")
-                qa("Does renaming change the baton itself?", "No. Nicknames are saved on this iPhone, matched by the Bluetooth identifier assigned by iOS. Other phones continue to see the advertised name.")
+                qa("Does renaming change the baton itself?", "Yes, with the name-enabled firmware. Settings → Connected batons → Your baton lets you save its Bluetooth name on the device. The app confirms that it was saved. It survives reboot and other phones see it on the next advertising session. Some phones may temporarily show a cached name. Stop practice before renaming.")
+                qa("Will changing the name hide my baton?", "No. The app looks for the shared Musical Baton service identifier, not the words Smart Baton. Each baton keeps its own individual Bluetooth identifier, even when several have the same name.")
                 qa("Can I add subdivisions or measure accents?", "You can choose a single accented click sound, but automatic subdivisions and first-beat-of-measure accents are not supported yet. Every accepted beat uses the selected sound.")
                 qa("Can the app update firmware or change sensor sampling?", "Those features aren't available with the current baton firmware. This app doesn't expose controls for them. Use the project's existing wired programming workflow for firmware updates.")
             }

@@ -16,7 +16,7 @@ final class ProductSession {
 
     var deviceName: String {
         guard let d = manager.activeDevice else { return "Your baton" }
-        return preferences.name(id: d.id, fallback: d.name)
+        return manager.batonDeviceName ?? d.name
     }
     var motionIsFresh: Bool { lastMotionAt.map { now - $0 < 3 } ?? false }
     var connectionRemaining: Int? {
@@ -26,7 +26,7 @@ final class ProductSession {
 
     func startScanning() {
         notice = nil
-        manager.startScanning(serviceUUIDs: [BatonMotionPacket.serviceUUID])
+        manager.startScanning(serviceUUIDs: [BatonIdentity.serviceUUID])
         scanStarted = manager.isScanning ? ProcessInfo.processInfo.systemUptime : nil
     }
     func stopScanning() { manager.stopScanning(); scanStarted = nil }

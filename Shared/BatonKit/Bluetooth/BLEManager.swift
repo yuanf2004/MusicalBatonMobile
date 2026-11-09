@@ -16,6 +16,13 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
     private(set) var services: [BLEService] = []
     private(set) var logs: [BLELogEntry] = []
     var errorMessage: String?
+    private(set) var batonDeviceName: String?
+    private(set) var isRenamingBaton = false
+    private(set) var batonNameMessage: String?
+    private(set) var batonNameError: String?
+    @ObservationIgnored private var requestedBatonName: String?
+    @ObservationIgnored private var nameConfirmation: Task<Void, Never>?
+
     let imuRecorder = IMURecorder()
     let conducting = ConductingController()
     let conductingProfiles = ConductingProfileStore()
@@ -45,9 +52,98 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
         services.flatMap(\.characteristics).first { $0.isBatonSettings }
     }
 
+    var batonNameCharacteristic: BLECharacteristic? {
+        services.flatMap(\.characteristics).first { $0.isBatonName }
+    }
+
+    func renameBaton(_ input: String) {
+        guard !isRenamingBaton else { return }
+        batonNameError = nil
+        batonNameMessage = nil
+        guard !conducting.isEnabled else {
+            batonNameError = "Stop practice before renaming your baton."
+            return
+        }
+        guard let model = batonNameCharacteristic,
+              let peripheral = usablePeripheral(for: model),
+              model.characteristic.properties.contains([.read, .write]) else {
+            batonNameError = "This baton needs the name-enabled firmware before its device name can be changed."
+            return
+        }
+        guard !model.readPending, !model.writePending else {
+            batonNameError = "A name request is still pending. Wait a moment and try again."
+            return
+        }
+        do {
+            let name = try BatonIdentity.validatedName(input)
+            let data = Data(name.utf8)
+            guard data.count <= peripheral.maximumWriteValueLength(for: .withResponse) else {
+                batonNameError = "The connection cannot send this name. Reconnect and try again."
+                return
+            }
+            requestedBatonName = name
+            isRenamingBaton = true
+            model.writePending = true
+            model.error = nil
+            peripheral.writeValue(data, for: model.characteristic, type: .withResponse)
+            // Also covers a missing write ACK. No success is reported on ACK alone.
+            nameConfirmation?.cancel()
+            nameConfirmation = Task { [weak self] in
+                do { try await Task.sleep(for: .seconds(10)) } catch { return }
+                self?.finishNameRequest(error: "Could not confirm the saved name. Reconnect to check the baton before retrying.")
+            }
+        } catch { batonNameError = error.localizedDescription }
+    }
+
+    private func pollSavedName() {
+        nameConfirmation?.cancel()
+        nameConfirmation = Task { [weak self] in
+            for _ in 0..<40 {
+                guard let self, self.isRenamingBaton, let model = self.batonNameCharacteristic else { return }
+                if !model.readPending { self.read(model) }
+                do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+            }
+            self?.finishNameRequest(error: "Could not confirm the saved name. Reconnect to check the baton before retrying.")
+        }
+    }
+
+    private func finishNameRequest(error: String? = nil) {
+        nameConfirmation?.cancel()
+        nameConfirmation = nil
+        requestedBatonName = nil
+        isRenamingBaton = false
+        batonNameError = error
+        batonNameMessage = error == nil ? "Name saved on your baton." : nil
+    }
+
+    private func receiveBatonName(_ data: Data) {
+        do {
+            let value = try BatonNameValue(data: data)
+            if value.status == .saved {
+                batonDeviceName = value.name
+                activeDevice?.name = value.name
+                if let id = activeDevice?.id, let index = deviceIndices[id] {
+                    devices[index].name = value.name
+                }
+            }
+            guard let requested = requestedBatonName else { return }
+            if value.status == .failed {
+                finishNameRequest(error: "The baton couldn't save the name. Its previous name is unchanged; try again.")
+            } else if value.confirms(requested) {
+                finishNameRequest()
+            }
+        } catch {
+            if isRenamingBaton { finishNameRequest(error: error.localizedDescription) }
+        }
+    }
+
     func setConductingMode(_ enabled: Bool) {
         guard enabled else { stopConducting(); return }
         guard !conducting.isEnabled else { return }
+        guard !isRenamingBaton else {
+            conducting.fail("Wait for your baton name to finish saving before starting practice.")
+            return
+        }
         guard isConnected, !isDisconnecting, let model = batonBeatCharacteristic,
               model.characteristic.properties.contains(.notify),
               let settings = batonSettingsCharacteristic,
@@ -143,6 +239,9 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
         stopScanning()
         errorMessage = nil
         services.removeAll()
+        batonDeviceName = nil
+        batonNameMessage = nil
+        batonNameError = nil
         activeDevice = device
         device.peripheral.delegate = self
         log("Connecting to \(device.name)…")
@@ -259,6 +358,8 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
     }
 
     private func resetConnection() {
+        if isRenamingBaton { finishNameRequest(error: "Disconnected before the saved name was confirmed. Reconnect to check the baton name.") }
+        batonDeviceName = nil
         stopConducting()
         conducting.resetConnection()
         imuRecorder.stop(reason: "Device disconnected")
@@ -371,6 +472,7 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
         serviceModel.characteristics = (service.characteristics ?? []).map(BLECharacteristic.init)
         for model in serviceModel.characteristics {
             log("Characteristic discovered [\(service.uuid)]: \(model.characteristic.uuid)")
+            if model.isBatonName, model.characteristic.properties.contains(.read) { read(model) }
         }
     }
 
@@ -380,6 +482,7 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
         guard let model = model(for: characteristic) else { return }
         model.readPending = false
         if let error {
+            if model.isBatonName, isRenamingBaton { finishNameRequest(error: error.localizedDescription) }
             if model.isBatonSettings, pendingProfileSettings != nil {
                 stopConducting()
                 conducting.fail("Could not verify the baton settings: \(error.localizedDescription)")
@@ -389,6 +492,7 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
         }
         model.error = nil
         model.updateValue(characteristic.value)
+        if model.isBatonName, let data = characteristic.value { receiveBatonName(data) }
         if model.isBatonSettings, let expected = pendingProfileSettings, conducting.isEnabled {
             pendingProfileSettings = nil
             if characteristic.value == expected {
@@ -453,6 +557,7 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
         guard let model = model(for: characteristic) else { return }
         model.writePending = false
         if let error {
+            if model.isBatonName, isRenamingBaton { finishNameRequest(error: error.localizedDescription) }
             if model.isBatonSettings, pendingProfileSettings != nil {
                 stopConducting()
                 conducting.fail("The baton rejected the profile: \(error.localizedDescription)")
@@ -460,6 +565,7 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
             characteristicError("Write failed: \(error.localizedDescription)", model)
             return
         }
+        if model.isBatonName, requestedBatonName != nil { pollSavedName() }
         if model.isBatonSettings, pendingProfileSettings != nil, conducting.isEnabled {
             // Write acknowledgement alone is not enough; verify the stored setting.
             read(model)
@@ -470,6 +576,8 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
 
     func peripheral(_ peripheral: CBPeripheral, didModifyServices invalidatedServices: [CBService]) {
         guard peripheral.identifier == activeDevice?.id, !isDisconnecting else { return }
+        if isRenamingBaton { finishNameRequest(error: "Baton services changed. Reconnect before renaming.") }
+        batonDeviceName = nil
         stopConducting(reason: "Baton services changed. Enable the mode after discovery finishes.")
         conducting.resetConnection()
         imuRecorder.stop(reason: "GATT services changed")

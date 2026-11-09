@@ -29,11 +29,11 @@
 			path = "Musical Baton Mobile";
 			sourceTree = "<group>";
 		};
-		BA7000000000000000000001 /* BatonKit */ = {
-            isa = PBXFileSystemSynchronizedRootGroup;
-            path = ../../Shared/BatonKit;
-            sourceTree = "<group>";
-        };
+		BA7000000000000000000001 /* ../../Shared/BatonKit */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ../../Shared/BatonKit;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -50,7 +50,7 @@
 		1CE989A03074289400A677DA = {
 			isa = PBXGroup;
 			children = (
-                BA7000000000000000000001 /* BatonKit */,
+				BA7000000000000000000001 /* ../../Shared/BatonKit */,
 				1CE989AB3074289400A677DA /* Musical Baton Mobile */,
 				1CE989AA3074289400A677DA /* Products */,
 			);
@@ -80,8 +80,8 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-                BA7000000000000000000001 /* BatonKit */,
 				1CE989AB3074289400A677DA /* Musical Baton Mobile */,
+				BA7000000000000000000001 /* ../../Shared/BatonKit */,
 			);
 			name = "Musical Baton Mobile";
 			packageProductDependencies = (
@@ -274,7 +274,7 @@
 				DEVELOPMENT_TEAM = SM558KRYAG;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-                INFOPLIST_KEY_CFBundleDisplayName = "Baton Debug";
+				INFOPLIST_KEY_CFBundleDisplayName = "Baton Debug";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Smart Baton uses Bluetooth to connect to and communicate with the baton.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -308,7 +308,7 @@
 				DEVELOPMENT_TEAM = SM558KRYAG;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-                INFOPLIST_KEY_CFBundleDisplayName = "Baton Debug";
+				INFOPLIST_KEY_CFBundleDisplayName = "Baton Debug";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Smart Baton uses Bluetooth to connect to and communicate with the baton.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
