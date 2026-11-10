@@ -14,6 +14,9 @@ struct PracticeView: View {
     private var manager: BLEManager { session.manager }
     @State private var showingConnection = false
     @State private var showingPreferences = false
+    @State private var recordNextSession = false
+    @State private var recordingPreferenceLoaded = false
+    @State private var showingRecordingSave = false
     @Environment(\.scenePhase) private var scenePhase
 
     private var canConduct: Bool {
@@ -36,6 +39,17 @@ struct PracticeView: View {
                     connectionCard
                     if manager.isConnected { healthCard }
                     practiceCard
+                    NavigationLink { RecordingsView(store: session.recordings) } label: {
+                        HStack(spacing: 14) {
+                            Image(systemName: "waveform.badge.plus").font(.title2)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Recordings").font(BatonTheme.serif(28, relativeTo: .title2))
+                                Text("Play, edit, export, or create a touchpad recording")
+                                    .font(.subheadline).foregroundStyle(.secondary)
+                            }
+                            Spacer(); Image(systemName: "chevron.right")
+                        }.padding(20).background(BatonTheme.surface, in: RoundedRectangle(cornerRadius: 24))
+                    }.buttonStyle(.plain).disabled(manager.conducting.isEnabled)
                     Button { showingPreferences = true } label: {
                         HStack(spacing: 14) {
                             Image(systemName: "slider.horizontal.3").font(.title2)
@@ -93,6 +107,12 @@ struct PracticeView: View {
             NavigationStack { SoundPreferencesView(store: manager.conductingProfiles,
                                                    isPracticing: manager.conducting.isEnabled) }
         }
+        .sheet(isPresented: $showingRecordingSave) {
+            if let recording = session.recordings.recoveredDraft {
+                NavigationStack { RecordingSaveView(store: session.recordings, recording: recording) }
+                    .interactiveDismissDisabled()
+            }
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active {
                 manager.stopConducting(reason: "Practice paused. Tap Start practice when you return.")
@@ -101,8 +121,22 @@ struct PracticeView: View {
             }
         }
         .onChange(of: manager.isConnected) { _, _ in session.connectionChanged() }
+        .onChange(of: manager.conducting.isReady) { _, ready in
+            guard ready, recordNextSession, !session.recordings.isCapturing,
+                  let sound = manager.conducting.activeProfile?.otherBeatSound else { return }
+            session.recordings.beginCapture(sound: sound, startedAt: ProcessInfo.processInfo.systemUptime)
+        }
+        .onChange(of: manager.conducting.isEnabled) { old, enabled in
+            guard old, !enabled, session.recordings.isCapturing else { return }
+            if session.recordings.finishCapture() != nil { showingRecordingSave = true }
+        }
         .onChange(of: manager.batonMotionCharacteristic?.value) { _, _ in session.motionReceived() }
         .task {
+            if !recordingPreferenceLoaded {
+                recordNextSession = session.preferences.recordSessionsByDefault
+                recordingPreferenceLoaded = true
+                if session.recordings.recoveredDraft != nil { showingRecordingSave = true }
+            }
             while !Task.isCancelled {
                 session.tick()
                 do { try await Task.sleep(for: .seconds(1)) } catch { return }
@@ -191,6 +225,12 @@ struct PracticeView: View {
                     manager.conducting.testSound()
                 }.disabled(!manager.conducting.isReady)
             }
+            Toggle(isOn: $recordNextSession) {
+                Label("Record this session", systemImage: "record.circle")
+            }
+            .disabled(manager.conducting.isEnabled)
+            Text(recordNextSession ? "Only beats you hear will be saved. You'll name the recording when practice stops." : "Practice starts immediately without saving beats.")
+                .font(.footnote).foregroundStyle(.secondary)
             Button {
                 preview.stop()
                 session.tick()

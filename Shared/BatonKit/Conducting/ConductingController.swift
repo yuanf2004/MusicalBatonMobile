@@ -24,6 +24,7 @@ final class ConductingController {
     private(set) var audioOutputMS: Double = 0
     private(set) var audioRoute = "Not active"
     private(set) var callbackToScheduleMS: Double?
+    @ObservationIgnored var onAudibleBeat: ((TimeInterval) -> Void)?
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
 
     init() {
@@ -131,9 +132,11 @@ final class ConductingController {
         }
         lastFilterReason = nil
         if playClick() {
-            callbackToScheduleMS = max(0, ProcessInfo.processInfo.systemUptime - receivedAt) * 1000
+            let playedAt = ProcessInfo.processInfo.systemUptime
+            callbackToScheduleMS = max(0, playedAt - receivedAt) * 1000
             lastBeat = packet
             beatCount += 1
+            onAudibleBeat?(playedAt)
         }
     }
 

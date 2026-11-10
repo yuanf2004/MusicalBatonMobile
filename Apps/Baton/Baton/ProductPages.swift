@@ -35,6 +35,9 @@ struct SettingsView: View {
                 }
                 Text("Stop practice before changing your sound or sensitivity.")
                     .font(.footnote).foregroundStyle(.secondary)
+                Toggle("Record sessions by default", isOn: $preferences.recordSessionsByDefault)
+                Text("You can override this on Home before each session. Recording stores only the timing of beats you hear, not microphone audio.")
+                    .font(.footnote).foregroundStyle(.secondary)
             }
             Section("Connected batons") {
                 if session.manager.isConnected {
@@ -177,6 +180,7 @@ struct HelpView: View {
                 qa("What if Bluetooth access is off?", "Turn Bluetooth on in iPhone Settings. If you denied access, allow Musical Baton to use Bluetooth under Settings → Privacy & Security → Bluetooth, then return and search again.")
                 qa("Why isn't it making sound?", "Check media volume and the current speaker/headphone output. Stop practice and use Test sound to check playback. Then connect, wait for setup to finish and start practice again. Firm strokes may help; choose Gentle sensitivity for smaller movements.")
                 qa("Why are some movements silent?", "Practice filters out weak strokes and idle motion. Hold still for a moment before starting. Only accepted beats make a sound; pauses and missed beats are not replayed.")
+                qa("What does session recording save?", "It stores the timing of beats that actually played and the selected sound. It never records microphone audio or changes how the baton performs. Open Recordings to correct timing, add beats, play the result, or export a generated WAV audio file.")
                 qa("Why did practice stop?", "Leaving the app, disconnecting, a phone call, or changing headphones can stop playback. A connection time limit can also disconnect your baton. Return to Home, reconnect if needed and tap Start practice.")
                 qa("What do the health indicators mean?", "Connected means the Bluetooth link is active. Receiving motion means a valid motion packet arrived within the past three seconds. Waiting for data is not a battery or sensor failure diagnosis. The current firmware doesn't report battery charge.")
                 qa("Does renaming change the baton itself?", "Yes, with the name-enabled firmware. Settings → Connected batons → Your baton lets you save its Bluetooth name on the device. The app confirms that it was saved. It survives reboot and other phones see it on the next advertising session. Some phones may temporarily show a cached name. Stop practice before renaming.")

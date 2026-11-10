@@ -227,3 +227,41 @@ identity checks cover UTF-8 byte limits, malformed replies, UUID matching and
 saved/saving/failed confirmation rules. Firmware host checks cover deferred save,
 restore and failure behavior; the DK builds successfully. No app installation,
 flash or physical BLE rename/reboot/two-phone validation was performed.
+
+
+Conducting recordings
+---------------------
+
+The Musical Baton product app can optionally record a practice session without
+recording microphone audio or changing the live BLE, gesture-filtering or sound
+path. Home keeps one **Start practice** action and adds a **Record this session**
+toggle; its default is off and can be changed in Settings. Capture begins only
+after practice is ready and observes only beats whose sound was successfully
+triggered. Each beat stores elapsed time from session start plus original,
+modified, measure-start, accent and optional measure-number metadata.
+
+Active recording drafts are atomically persisted under Application Support after
+each accepted beat. A stop, disconnect, interruption or background transition
+offers the same name/save or confirmed-discard flow, and a draft left by process
+termination is offered again on launch. Saved recordings keep an immutable
+original beat/sound copy alongside the editable copy.
+
+The new Recordings page searches by name, plays generated beat audio, selects and
+confirms deletion of multiple rows, opens the editor and exports the edited
+sequence as a generated mono 44.1 kHz WAV through the iOS share sheet (including
+Save to Files). Playback generates a 30 percent higher-pitched form of the chosen
+voice for accented and new-measure beats. It never runs through the live baton
+capture path.
+
+The touchpad recorder starts with its first new-measure beat and provides regular
+and measure-beat controls, stop/save naming and confirmed escape. The editor has
+explicit and double-tap rename, sound selection, a vertical time list, beat
+selection/deletion, accent and measure-start flags, 10 ms earlier/later shifts,
+time-positioned beat insertion, visit-scoped undo/redo and revert of beats and
+sound without reverting the recording name.
+
+Recording host checks cover elapsed capture, default flags, immutable originals,
+edited persistence, recoverable drafts and WAV structure. Audio timing, pause and
+resume behavior, share-sheet destinations, lifecycle interruption handling and
+the timeline's iPhone ergonomics still require physical-device validation. No
+firmware, UUID, packet or sensitivity behavior is changed.

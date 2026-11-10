@@ -7,12 +7,19 @@ import Observation
 final class ProductSession {
     let manager = BLEManager()
     let preferences = ProductPreferences()
+    let recordings = ConductingRecordingStore()
     private(set) var notice: String?
     private(set) var scanStarted: TimeInterval?
     private(set) var connectedAt: TimeInterval?
     private(set) var lastMotionAt: TimeInterval?
     private(set) var now = ProcessInfo.processInfo.systemUptime
     @ObservationIgnored private var telemetryRequests = Set<UUID>()
+
+    init() {
+        manager.conducting.onAudibleBeat = { [weak self] uptime in
+            self?.recordings.captureAudibleBeat(at: uptime)
+        }
+    }
 
     var deviceName: String {
         guard let d = manager.activeDevice else { return "Your baton" }
