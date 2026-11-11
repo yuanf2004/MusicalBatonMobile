@@ -260,8 +260,34 @@ selection/deletion, accent and measure-start flags, 10 ms earlier/later shifts,
 time-positioned beat insertion, visit-scoped undo/redo and revert of beats and
 sound without reverting the recording name.
 
+Recording rows expose both direct confirmed deletion and multi-select confirmed
+deletion. In the editor, the header and selected-beat controls remain visible
+while the time axis scrolls independently. Accent and new-measure switches show
+the selected beat's current state; regular, accented and new-measure beats use
+distinct timeline colors. Deleting an individual beat also requires confirmation
+and remains undoable before saving. A Recording Guide is available from both the
+recordings list and editor and explains capture, playback, export, touchpad,
+timeline symbols, editing, undo and revert behavior.
+
+Multi-selection uses square checkboxes. Touchpad recordings accept an optional
+positive starting measure number; the first measure beat receives that number,
+regular beats inherit the current measure and each later measure beat increments
+it. Recordings containing numbered beats expose playback-from-measure choices.
+The editor time axis reserves scrollable space after the last beat for later
+insertions. Contextual question-mark controls explain recording, sound, movement,
+starting measures, accents, new measures, add mode and undo/redo without requiring
+users to leave their current workflow.
+
 Recording host checks cover elapsed capture, default flags, immutable originals,
 edited persistence, recoverable drafts and WAV structure. Audio timing, pause and
 resume behavior, share-sheet destinations, lifecycle interruption handling and
 the timeline's iPhone ergonomics still require physical-device validation. No
 firmware, UUID, packet or sensitivity behavior is changed.
+
+A standalone interactive Windows-friendly UI prototype is available at
+``Mockups/recordings/index.html``. It uses only local HTML, CSS and JavaScript;
+double-click the file to review the proposed Home, recordings list, touchpad,
+save and timeline-editing flows without Xcode, SwiftUI or an iOS simulator. The
+prototype also demonstrates connection and naming, sound/movement preferences,
+Settings, Help, the Recording Guide, confirmation dialogs and stateful editing
+controls so browser review covers the product app's user-facing workflows.

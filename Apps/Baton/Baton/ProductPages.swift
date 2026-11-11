@@ -35,7 +35,12 @@ struct SettingsView: View {
                 }
                 Text("Stop practice before changing your sound or sensitivity.")
                     .font(.footnote).foregroundStyle(.secondary)
-                Toggle("Record sessions by default", isOn: $preferences.recordSessionsByDefault)
+                Toggle(isOn: $preferences.recordSessionsByDefault) {
+                    HStack {
+                        Text("Record sessions by default")
+                        TermHelpButton(title: "Recording default", message: "Sets the initial state of Record this session on Home. You can still change it before each practice session.")
+                    }
+                }
                 Text("You can override this on Home before each session. Recording stores only the timing of beats you hear, not microphone audio.")
                     .font(.footnote).foregroundStyle(.secondary)
             }

@@ -226,7 +226,10 @@ struct PracticeView: View {
                 }.disabled(!manager.conducting.isReady)
             }
             Toggle(isOn: $recordNextSession) {
-                Label("Record this session", systemImage: "record.circle")
+                HStack {
+                    Label("Record this session", systemImage: "record.circle")
+                    TermHelpButton(title: "Record this session", message: "Stores the timing and sound of beats you actually hear. It does not record microphone audio or change live conducting.")
+                }
             }
             .disabled(manager.conducting.isEnabled)
             Text(recordNextSession ? "Only beats you hear will be saved. You'll name the recording when practice stops." : "Practice starts immediately without saving beats.")
@@ -328,15 +331,15 @@ struct SoundPreferencesView: View {
         Form {
             Section("Your sound") {
                 TextField("Name", text: $draft.name)
-                Picker("Sound", selection: $draft.otherBeatSound) {
+                Picker(selection: $draft.otherBeatSound) {
                     ForEach(ClickVoice.allCases) { Text($0.title).tag($0) }
-                }
+                } label: { HStack { Text("Sound"); TermHelpButton(title: "Sound", message: "The generated sound played for each accepted beat and used later for recording playback and export.") } }
                 Button("Test sound", systemImage: "speaker.wave.2") { preview.play(draft.otherBeatSound) }
                 Text("Preview any sound without connecting a baton. The selected sound plays on every accepted beat.")
                     .font(.footnote).foregroundStyle(.secondary)
-                Picker("Movement", selection: $draft.sensitivity) {
+                Picker(selection: $draft.sensitivity) {
                     ForEach(DetectionSensitivity.allCases) { Text($0.title).tag($0) }
-                }
+                } label: { HStack { Text("Movement"); TermHelpButton(title: "Movement sensitivity", message: "Controls how deliberate a baton stroke must be before it is accepted. Recording does not modify this behavior.") } }
                 Text("Choose Gentle for smaller movements or Deliberate for firmer strokes.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
