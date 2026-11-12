@@ -7,13 +7,14 @@ struct ProductPreferenceChecks {
         let defaults = UserDefaults(suiteName: name)!
         defer { defaults.removePersistentDomain(forName: name) }
         let prefs = ProductPreferences(defaults: defaults)
-        precondition(prefs.scanSeconds == 30 && prefs.connectionSeconds == 0)
+        precondition(prefs.scanSeconds == 30 && prefs.connectionSeconds == 0 && !prefs.recordSessionsByDefault)
         prefs.scanSeconds = 120
         prefs.connectionSeconds = 300
+        prefs.recordSessionsByDefault = true
         let id = UUID()
         precondition(prefs.rename(id: id, name: "  Concert baton  "))
         let reload = ProductPreferences(defaults: defaults)
-        precondition(reload.scanSeconds == 120 && reload.connectionSeconds == 300)
+        precondition(reload.scanSeconds == 120 && reload.connectionSeconds == 300 && reload.recordSessionsByDefault)
         precondition(reload.name(id: id, fallback: "Radio") == "Concert baton")
         precondition(reload.name(id: UUID(), fallback: "Other") == "Other")
         precondition(!reload.rename(id: id, name: String(repeating: "x", count: 41)))
@@ -31,6 +32,6 @@ struct ProductPreferenceChecks {
         precondition(!ConnectionTimePolicy.expired(start: 10, now: 99999, limit: 0))
         precondition(ConnectionTimePolicy.expired(start: 10, now: 45, limit: 30)) // Shortened active limit.
         precondition(!ConnectionTimePolicy.expired(start: 10, now: 45, limit: 60)) // Extended active limit.
-        print("Product scan/TTL boundaries, suspension elapsed time, persistence, invalid defaults and per-device nicknames passed")
+        print("Product scan/TTL/recording defaults, suspension elapsed time, persistence, invalid defaults and per-device nicknames passed")
     }
 }

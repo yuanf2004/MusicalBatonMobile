@@ -7,9 +7,11 @@ final class BeatAudioEngine {
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
     private let buffer: AVAudioPCMBuffer
+    private let accentedBuffer: AVAudioPCMBuffer
 
     init(voice: ClickVoice) throws {
         buffer = try Self.makeBuffer(voice: voice)
+        accentedBuffer = try Self.makeBuffer(voice: voice, accented: true)
         engine.attach(player)
         engine.connect(player, to: engine.mainMixerNode, format: buffer.format)
     }
@@ -21,9 +23,9 @@ final class BeatAudioEngine {
         player.play()
     }
 
-    func trigger() -> Bool {
+    func trigger(accented: Bool = false) -> Bool {
         guard engine.isRunning, player.isPlaying else { return false }
-        player.scheduleBuffer(buffer, at: nil, options: .interrupts, completionHandler: nil)
+        player.scheduleBuffer(accented ? accentedBuffer : buffer, at: nil, options: .interrupts, completionHandler: nil)
         return true
     }
 
@@ -33,10 +35,10 @@ final class BeatAudioEngine {
         engine.reset()
     }
 
-    nonisolated static func makeBuffer(voice: ClickVoice) throws -> AVAudioPCMBuffer {
+    nonisolated static func makeBuffer(voice: ClickVoice, accented: Bool = false) throws -> AVAudioPCMBuffer {
         // BeatSound generates a 44-byte PCM header followed by mono 16-bit LE,
         // 44.1 kHz samples. Keep the existing voice/envelope exactly unchanged.
-        let wav = Array(BeatSound.wavData(voice: voice, accented: false))
+        let wav = Array(BeatSound.wavData(voice: voice, accented: accented))
         let frames = (wav.count - 44) / 2
         guard let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1),
               let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)),

@@ -232,3 +232,129 @@ identity checks cover UTF-8 byte limits, malformed replies, UUID matching and
 saved/saving/failed confirmation rules. Firmware host checks cover deferred save,
 restore and failure behavior; the DK builds successfully. No app installation,
 flash or physical BLE rename/reboot/two-phone validation was performed.
+
+
+Conducting recordings
+---------------------
+
+The Musical Baton product app can optionally record a practice session without
+recording microphone audio or changing the live BLE, gesture-filtering or sound
+path. Home keeps one **Start practice** action and adds a **Record this session**
+toggle; its default is off and can be changed in Settings. Capture begins only
+after practice is ready and observes only beats whose sound was successfully
+triggered. Each beat stores elapsed time from session start plus original,
+modified, measure-start, accent and optional measure-number metadata.
+
+Active recording drafts are atomically persisted under Application Support after
+each accepted beat. A stop, disconnect, interruption or background transition
+offers the same name/save or confirmed-discard flow, and a draft left by process
+termination is offered again on launch. Saved recordings keep an immutable
+original beat/sound copy alongside the editable copy.
+
+The new Recordings page searches by name, plays generated beat audio, selects and
+confirms deletion of multiple rows, opens the editor and exports the edited
+sequence as a generated mono 44.1 kHz WAV through the iOS share sheet (including
+Save to Files). Playback generates a 30 percent higher-pitched form of the chosen
+voice for accented and new-measure beats. It never runs through the live baton
+capture path.
+
+The touchpad recorder starts with its first new-measure beat and provides regular
+and measure-beat controls, stop/save naming and confirmed escape. The editor has
+explicit and double-tap rename, sound selection, a vertical time list, beat
+selection/deletion, accent and measure-start flags, 10 ms earlier/later shifts,
+time-positioned beat insertion, visit-scoped undo/redo and revert of beats and
+sound without reverting the recording name.
+
+Recording rows expose both direct confirmed deletion and multi-select confirmed
+deletion. In the editor, the header and selected-beat controls remain visible
+while the time axis scrolls independently. Accent and new-measure switches show
+the selected beat's current state; regular, accented and new-measure beats use
+distinct timeline colors. Deleting an individual beat also requires confirmation
+and remains undoable before saving. A Recording Guide is available from both the
+recordings list and editor and explains capture, playback, export, touchpad,
+timeline symbols, editing, undo and revert behavior.
+
+Multi-selection uses square checkboxes. Touchpad recordings accept an optional
+positive starting measure number; the first measure beat receives that number,
+regular beats inherit the current measure and each later measure beat increments
+it. Recordings containing numbered beats expose playback-from-measure choices.
+The editor time axis reserves scrollable space after the last beat for later
+insertions. Contextual question-mark controls explain recording, sound, movement,
+starting measures, accents, new measures, add mode and undo/redo without requiring
+users to leave their current workflow.
+
+Recording host checks cover elapsed capture, default flags, immutable originals,
+edited persistence, recoverable drafts and WAV structure. Audio timing, pause and
+resume behavior, share-sheet destinations, lifecycle interruption handling and
+the timeline's iPhone ergonomics still require physical-device validation. No
+firmware, UUID, packet or sensitivity behavior is changed.
+
+A standalone interactive Windows-friendly UI prototype is available at
+``Mockups/recordings/index.html``. It uses only local HTML, CSS and JavaScript;
+double-click the file to review the proposed Home, recordings list, touchpad,
+save and timeline-editing flows without Xcode, SwiftUI or an iOS simulator. The
+prototype also demonstrates connection and naming, sound/movement preferences,
+Settings, Help, the Recording Guide, confirmation dialogs and stateful editing
+controls so browser review covers the product app's user-facing workflows.
+
+The Touchpad Recording page uses title capitalization. Saved recordings in the
+editor support audible Play/Pause and Restart using the selected sound and beat
+accents. Playback stops when editing, leaving the editor, or backgrounding the app.
+
+The recording editor shows a red playback cursor using the audio playback clock.
+Hold a beat to drag it vertically, or select it and set its exact time in seconds
+(0–86400). Moving a beat is undoable; dragging pauses playback.
+
+The playback cursor refreshes at the display-driven animation cadence. Beat
+dragging uses a fixed timeline coordinate space to avoid movement feedback and
+follows the finger directly; the moving dot turns red with no selection ring.
+
+Product option labels use Title Case, including sound choices and recording
+controls. The Set Time field displays beat times rounded to three decimal places.
+
+Selected beats appear red without a highlight ring. Tap empty timeline space or
+Done Editing to deselect; tap another dot to switch selection. Beat controls keep
+the selection active. Timeline hit targets stay fixed regardless of duration.
+
+Beat gestures distinguish a quick tap (select and show editing controls) from a
+long press followed by dragging (move). The full dot target responds to taps,
+and VoiceOver activation opens the beat editor.
+
+Quick beat taps are recognized independently of the hold-and-drag gesture, so
+selection does not depend on the long-press recognizer failing first.
+
+Measure-start dots are blue with a 1 symbol for the first beat of the measure;
+selected or dragged dots remain red. Selected beat details show the stored
+measure number, or Not Numbered when none was recorded.
+
+Drag the red playback line to the right of the dots to seek. Its black time label
+shows three decimals above the right end. Seeking pauses audio during the drag
+and resumes on release if it was playing; edits preserve the playback position.
+
+A pencil beside the recording name opens inline renaming, with an accessible
+Rename Recording label and a full-size touch target.
+
+Choosing a sound in Touchpad Recording, Edit Recording, or Your Sound plays a
+short preview. Editor playback pauses for sound changes; previews stop before
+recording playback and when leaving the screen or backgrounding the app.
+
+The playback cursor is drawn as one continuous full-width line across the time
+axis and dots, with its drag target kept on the right.
+
+Recording saves commit atomically before updating the library or clearing recovery
+data; failures remain visible and can be retried. WAV files stream in 4096-frame
+chunks with RIFF size validation instead of allocating the full audio in memory.
+Touchpad beat buttons preview the chosen sound, accented for new measures.
+
+Touchpad audio is prepared on entry and sound changes, reusing normal/accented
+buffers per tap with a short preferred audio buffer. It stops on exit/background
+and recovers after interruptions or output changes. Stop Without Saving offers
+a confirmed discard. Actual latency depends on the iPhone and output route.
+
+Touchpad rhythm pads fire once on touch-down, including normal accessibility
+activation. Recording playback only releases audio sessions it owns, preventing
+list dismissal from disabling touchpad audio on entry. A stopped touchpad engine
+automatically re-prepares the selected sound on the next tap.
+
+Touchpad sound selection locks after the first beat starts the recording, keeping
+its audio and saved sound consistent. Choose and preview sounds before starting.

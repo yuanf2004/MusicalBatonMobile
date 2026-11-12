@@ -11,7 +11,7 @@ nonisolated enum ConnectionTimePolicy {
     }
 
     static func title(seconds: Int) -> String {
-        if seconds == 0 { return "No limit" }
+        if seconds == 0 { return "No Limit" }
         return seconds < 60 ? "\(seconds) seconds" : "\(seconds / 60) minutes"
     }
 }
@@ -21,6 +21,7 @@ nonisolated enum ConnectionTimePolicy {
 final class ProductPreferences {
     var scanSeconds: Int { didSet { defaults.set(scanSeconds, forKey: "product.scanSeconds") } }
     var connectionSeconds: Int { didSet { defaults.set(connectionSeconds, forKey: "product.connectionSeconds") } }
+    var recordSessionsByDefault: Bool { didSet { defaults.set(recordSessionsByDefault, forKey: "product.recordSessionsByDefault") } }
     private(set) var nicknames: [String: String]
     @ObservationIgnored private let defaults: UserDefaults
 
@@ -30,6 +31,7 @@ final class ProductPreferences {
         scanSeconds = ConnectionTimePolicy.scanChoices.contains(scan) ? scan : 30
         let ttl = defaults.integer(forKey: "product.connectionSeconds")
         connectionSeconds = ConnectionTimePolicy.connectionChoices.contains(ttl) ? ttl : 0
+        recordSessionsByDefault = defaults.bool(forKey: "product.recordSessionsByDefault")
         nicknames = (defaults.dictionary(forKey: "product.nicknames") as? [String: String]) ?? [:]
     }
 

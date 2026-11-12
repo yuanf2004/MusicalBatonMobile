@@ -14,6 +14,9 @@ struct PracticeView: View {
     private var manager: BLEManager { session.manager }
     @State private var showingConnection = false
     @State private var showingPreferences = false
+    @State private var recordNextSession = false
+    @State private var recordingPreferenceLoaded = false
+    @State private var showingRecordingSave = false
     @Environment(\.scenePhase) private var scenePhase
 
     private var canConduct: Bool {
@@ -36,13 +39,24 @@ struct PracticeView: View {
                     connectionCard
                     if manager.isConnected { healthCard }
                     practiceCard
+                    NavigationLink { RecordingsView(store: session.recordings) } label: {
+                        HStack(spacing: 14) {
+                            Image(systemName: "waveform.badge.plus").font(.title2)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Recordings").font(BatonTheme.serif(28, relativeTo: .title2))
+                                Text("Play, edit, export, or create a touchpad recording")
+                                    .font(.subheadline).foregroundStyle(.secondary)
+                            }
+                            Spacer(); Image(systemName: "chevron.right")
+                        }.padding(20).background(BatonTheme.surface, in: RoundedRectangle(cornerRadius: 24))
+                    }.buttonStyle(.plain).disabled(manager.conducting.isEnabled)
                     Button { showingPreferences = true } label: {
                         HStack(spacing: 14) {
                             Image(systemName: "slider.horizontal.3").font(.title2)
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("Your sound").font(BatonTheme.serif(28, relativeTo: .title2))
+                                Text("Your Sound").font(BatonTheme.serif(28, relativeTo: .title2))
                                 Text(manager.conductingProfiles.selected.map {
-                                    "\($0.otherBeatSound.title) · \($0.sensitivity.title)"
+                                    "\($0.otherBeatSound.title.capitalized) · \($0.sensitivity.title)"
                                 } ?? "Choose a sound and sensitivity")
                                 .font(.subheadline).foregroundStyle(.secondary)
                             }
@@ -54,7 +68,7 @@ struct PracticeView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(manager.conducting.isEnabled)
-                    Button("Test current sound", systemImage: "speaker.wave.2") {
+                    Button("Test Current Sound", systemImage: "speaker.wave.2") {
                         if let profile = manager.conductingProfiles.selected { preview.play(profile.otherBeatSound) }
                     }
                     .disabled(manager.conducting.isEnabled || manager.conductingProfiles.selected == nil)
@@ -93,6 +107,12 @@ struct PracticeView: View {
             NavigationStack { SoundPreferencesView(store: manager.conductingProfiles,
                                                    isPracticing: manager.conducting.isEnabled) }
         }
+        .sheet(isPresented: $showingRecordingSave) {
+            if let recording = session.recordings.recoveredDraft {
+                NavigationStack { RecordingSaveView(store: session.recordings, recording: recording) }
+                    .interactiveDismissDisabled()
+            }
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active {
                 manager.stopConducting(reason: "Practice paused. Tap Start practice when you return.")
@@ -101,8 +121,22 @@ struct PracticeView: View {
             }
         }
         .onChange(of: manager.isConnected) { _, _ in session.connectionChanged() }
+        .onChange(of: manager.conducting.isReady) { _, ready in
+            guard ready, recordNextSession, !session.recordings.isCapturing,
+                  let sound = manager.conducting.activeProfile?.otherBeatSound else { return }
+            session.recordings.beginCapture(sound: sound, startedAt: ProcessInfo.processInfo.systemUptime)
+        }
+        .onChange(of: manager.conducting.isEnabled) { old, enabled in
+            guard old, !enabled, session.recordings.isCapturing else { return }
+            if session.recordings.finishCapture() != nil { showingRecordingSave = true }
+        }
         .onChange(of: manager.batonMotionCharacteristic?.value) { _, _ in session.motionReceived() }
         .task {
+            if !recordingPreferenceLoaded {
+                recordNextSession = session.preferences.recordSessionsByDefault
+                recordingPreferenceLoaded = true
+                if session.recordings.recoveredDraft != nil { showingRecordingSave = true }
+            }
             while !Task.isCancelled {
                 session.tick()
                 do { try await Task.sleep(for: .seconds(1)) } catch { return }
@@ -138,7 +172,7 @@ struct PracticeView: View {
                 if let notice = session.notice { Text(notice).font(.callout).foregroundStyle(.secondary) }
                 Text("Press your baton's button three times. Its blinking light means it is ready to connect.")
                     .foregroundStyle(.secondary)
-                Button("Find my baton", systemImage: "magnifyingglass") { showingConnection = true }
+                Button("Find My Baton", systemImage: "magnifyingglass") { showingConnection = true }
                     .buttonStyle(.borderedProminent)
             }
         }
@@ -150,17 +184,17 @@ struct PracticeView: View {
 
     private var healthCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Baton health").font(BatonTheme.serif(28, relativeTo: .title2))
+            Text("Baton Health").font(BatonTheme.serif(28, relativeTo: .title2))
                 .foregroundStyle(BatonTheme.ultramarine)
             Label(manager.isDisconnecting ? "Disconnecting" : "Connected", systemImage: "antenna.radiowaves.left.and.right")
             Label(session.motionIsFresh ? "Receiving motion" : "Waiting for motion",
                   systemImage: session.motionIsFresh ? "waveform.path" : "clock")
                 .foregroundStyle(.secondary)
             if let remaining = session.connectionRemaining {
-                LabeledContent("Time remaining", value: "\(remaining / 60)m \(remaining % 60)s")
+                LabeledContent("Time Remaining", value: "\(remaining / 60)m \(remaining % 60)s")
                     .font(.subheadline)
             }
-            NavigationLink("View baton details") { BatonDetailsView(session: session) }
+            NavigationLink("View Baton Details") { BatonDetailsView(session: session) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(22)
@@ -187,16 +221,25 @@ struct PracticeView: View {
                     .font(.system(size: 52, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                 Text("beats played").foregroundStyle(.secondary)
-                Button("Try your sound", systemImage: "speaker.wave.2") {
+                Button("Try Your Sound", systemImage: "speaker.wave.2") {
                     manager.conducting.testSound()
                 }.disabled(!manager.conducting.isReady)
             }
+            Toggle(isOn: $recordNextSession) {
+                HStack {
+                    Label("Record This Session", systemImage: "record.circle")
+                    TermHelpButton(title: "Record This Session", message: "Stores the timing and sound of beats you actually hear. It does not record microphone audio or change live conducting.")
+                }
+            }
+            .disabled(manager.conducting.isEnabled)
+            Text(recordNextSession ? "Only beats you hear will be saved. You'll name the recording when practice stops." : "Practice starts immediately without saving beats.")
+                .font(.footnote).foregroundStyle(.secondary)
             Button {
                 preview.stop()
                 session.tick()
                 manager.setConductingMode(!manager.conducting.isEnabled)
             } label: {
-                Text(manager.conducting.isEnabled ? "Stop practice" : "Start practice")
+                Text(manager.conducting.isEnabled ? "Stop Practice" : "Start Practice")
                     .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 10)
             }
             .buttonStyle(.borderedProminent)
@@ -221,10 +264,10 @@ private struct ConnectionView: View {
                     Text("Triple-press the baton button, then choose your baton below. If its light stops blinking, triple-press again.")
                     Label(manager.bluetoothStatus, systemImage: "antenna.radiowaves.left.and.right")
                 }
-                Section("Nearby batons") {
+                Section("Nearby Batons") {
                     if let device = manager.activeDevice {
                         ProgressView("Connecting to \(device.name)…")
-                        Button("Cancel connection", role: .cancel) { manager.disconnect() }
+                        Button("Cancel Connection", role: .cancel) { manager.disconnect() }
                             .disabled(manager.isDisconnecting)
                     } else {
                         ForEach(manager.devices.filter(\.isConnectable)) { device in
@@ -236,7 +279,7 @@ private struct ConnectionView: View {
                             Text(manager.isScanning ? "Looking for your baton…" : "No baton found yet.")
                                 .foregroundStyle(.secondary)
                         }
-                        Button(manager.isScanning ? "Stop searching" : "Search again") {
+                        Button(manager.isScanning ? "Stop Searching" : "Search Again") {
                             if manager.isScanning { session.stopScanning() }
                             else { search() }
                         }.disabled(manager.bluetoothState != .poweredOn)
@@ -247,11 +290,11 @@ private struct ConnectionView: View {
             }
             .scrollContentBackground(.hidden)
             .background(BatonTheme.canvas)
-            .navigationTitle("Find your baton")
+            .navigationTitle("Find Your Baton")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    Text("Find your baton").font(BatonTheme.serif(26, relativeTo: .title2))
+                    Text("Find Your Baton").font(BatonTheme.serif(26, relativeTo: .title2))
                         .foregroundStyle(BatonTheme.ultramarine)
                 }
                 ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
@@ -286,17 +329,17 @@ struct SoundPreferencesView: View {
 
     var body: some View {
         Form {
-            Section("Your sound") {
+            Section("Your Sound") {
                 TextField("Name", text: $draft.name)
-                Picker("Sound", selection: $draft.otherBeatSound) {
-                    ForEach(ClickVoice.allCases) { Text($0.title).tag($0) }
-                }
-                Button("Test sound", systemImage: "speaker.wave.2") { preview.play(draft.otherBeatSound) }
+                Picker(selection: Binding(get: { draft.otherBeatSound }, set: { draft.otherBeatSound = $0; preview.play($0) })) {
+                    ForEach(ClickVoice.allCases) { Text($0.title.capitalized).tag($0) }
+                } label: { HStack { Text("Sound"); TermHelpButton(title: "Sound", message: "The generated sound played for each accepted beat and used later for recording playback and export.") } }
+                Button("Test Sound", systemImage: "speaker.wave.2") { preview.play(draft.otherBeatSound) }
                 Text("Preview any sound without connecting a baton. The selected sound plays on every accepted beat.")
                     .font(.footnote).foregroundStyle(.secondary)
-                Picker("Movement", selection: $draft.sensitivity) {
-                    ForEach(DetectionSensitivity.allCases) { Text($0.title).tag($0) }
-                }
+                Picker(selection: $draft.sensitivity) {
+                    ForEach(DetectionSensitivity.allCases) { Text($0.title.capitalized).tag($0) }
+                } label: { HStack { Text("Movement"); TermHelpButton(title: "Movement sensitivity", message: "Controls how deliberate a baton stroke must be before it is accepted. Recording does not modify this behavior.") } }
                 Text("Choose Gentle for smaller movements or Deliberate for firmer strokes.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
@@ -307,7 +350,7 @@ struct SoundPreferencesView: View {
             if let error = preview.error { Text(error).foregroundStyle(.red) }
             if let error = store.error { Text(error).foregroundStyle(.red) }
         }
-        .batonPage("Your sound")
+        .batonPage("Your Sound")
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             ToolbarItem(placement: .confirmationAction) {
