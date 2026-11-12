@@ -31,20 +31,20 @@ struct SettingsView: View {
             Section("Practice") {
                 NavigationLink { SoundPreferencesView(store: session.manager.conductingProfiles,
                                                      isPracticing: session.manager.conducting.isEnabled) } label: {
-                    Label("Sound & movement", systemImage: "music.note")
+                    Label("Sound & Movement", systemImage: "music.note")
                 }
                 Text("Stop practice before changing your sound or sensitivity.")
                     .font(.footnote).foregroundStyle(.secondary)
                 Toggle(isOn: $preferences.recordSessionsByDefault) {
                     HStack {
-                        Text("Record sessions by default")
+                        Text("Record Sessions By Default")
                         TermHelpButton(title: "Recording default", message: "Sets the initial state of Record this session on Home. You can still change it before each practice session.")
                     }
                 }
                 Text("You can override this on Home before each session. Recording stores only the timing of beats you hear, not microphone audio.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
-            Section("Connected batons") {
+            Section("Connected Batons") {
                 if session.manager.isConnected {
                     NavigationLink { BatonDetailsView(session: session) } label: {
                         Label(session.deviceName, systemImage: "checkmark.circle")
@@ -58,12 +58,12 @@ struct SettingsView: View {
             }
             // Keep Bluetooth options at the bottom, as requested.
             Section {
-                Picker("Search duration", selection: $preferences.scanSeconds) {
+                Picker("Search Duration", selection: $preferences.scanSeconds) {
                     ForEach(ConnectionTimePolicy.scanChoices, id: \.self) {
                         Text(ConnectionTimePolicy.title(seconds: $0)).tag($0)
                     }
                 }
-                Picker("Connection time limit", selection: $preferences.connectionSeconds) {
+                Picker("Connection Time Limit", selection: $preferences.connectionSeconds) {
                     ForEach(ConnectionTimePolicy.connectionChoices, id: \.self) {
                         Text(ConnectionTimePolicy.title(seconds: $0)).tag($0)
                     }
@@ -86,11 +86,11 @@ struct BatonDetailsView: View {
     var body: some View {
         Form {
             if session.manager.isConnected, let device = session.manager.activeDevice {
-                Section("Baton Bluetooth name") {
-                    TextField("Baton name", text: $deviceName)
+                Section("Baton Bluetooth Name") {
+                    TextField("Baton Name", text: $deviceName)
                         .onSubmit { saveName(device.id) }
                         .disabled(session.manager.isRenamingBaton || session.manager.conducting.isEnabled)
-                    Button(session.manager.isRenamingBaton ? "Saving on baton…" : "Save on baton") { saveName(device.id) }
+                    Button(session.manager.isRenamingBaton ? "Saving On Baton…" : "Save On Baton") { saveName(device.id) }
                         .disabled(session.manager.batonNameCharacteristic == nil || session.manager.isRenamingBaton ||
                                   session.manager.conducting.isEnabled || (try? BatonIdentity.validatedName(deviceName)) == nil)
                     if session.manager.batonNameCharacteristic == nil {
@@ -108,7 +108,7 @@ struct BatonDetailsView: View {
                     if let renameError { Text(renameError).foregroundStyle(.red) }
                 }
                 Section("Identity") {
-                    LabeledContent("Bluetooth name", value: session.deviceName)
+                    LabeledContent("Bluetooth Name", value: session.deviceName)
                     Text("All batons share the same service identifier, so changing this name does not affect discovery.")
                         .font(.footnote).foregroundStyle(.secondary)
                     VStack(alignment: .leading, spacing: 8) {
@@ -117,7 +117,7 @@ struct BatonDetailsView: View {
                     }
                     Text("This identifier is assigned by iOS. It is not the baton's serial number or Bluetooth MAC address.")
                         .font(.footnote).foregroundStyle(.secondary)
-                    if let serial = reportedValue("2A25") { LabeledContent("Serial number", value: serial) }
+                    if let serial = reportedValue("2A25") { LabeledContent("Serial Number", value: serial) }
                     if let firmware = reportedValue("2A26") { LabeledContent("Firmware", value: firmware) }
                     if let hardware = reportedValue("2A27") { LabeledContent("Hardware", value: hardware) }
                     if reportedValue("2A25") == nil && reportedValue("2A26") == nil && reportedValue("2A27") == nil {
@@ -128,14 +128,14 @@ struct BatonDetailsView: View {
                 Section("Connection") {
                     LabeledContent("Status", value: session.manager.isDisconnecting ? "Disconnecting" : "Connected")
                     LabeledContent("Motion", value: session.motionIsFresh ? "Receiving" : "Waiting for data")
-                    Button("Disconnect baton", role: .destructive) { session.manager.disconnect() }
+                    Button("Disconnect Baton", role: .destructive) { session.manager.disconnect() }
                         .disabled(session.manager.isDisconnecting)
                 }
             } else {
                 Section { Text("This baton is disconnected. Connect from Home to edit its name or view details.") }
             }
         }
-        .batonPage("Your baton")
+        .batonPage("Your Baton")
         .onChange(of: session.manager.batonDeviceName) { _, name in
             if let name, !session.manager.isRenamingBaton { deviceName = name }
         }
@@ -172,7 +172,7 @@ struct HelpView: View {
                     .font(BatonTheme.serif(36, relativeTo: .largeTitle))
                     .foregroundStyle(BatonTheme.ultramarine)
             }
-            Section("Start here") {
+            Section("Start Here") {
                 DisclosureGroup("How do I set up my baton?") {
                     guide(["Power on your baton.", "Press its button three times. A breathing Bluetooth light means it's advertising.", "On Home, tap Find my baton, allow Bluetooth access and select your baton.", "Choose your sound and movement sensitivity. You can preview sounds before connecting.", "Tap Start practice. Hold the baton still briefly, then conduct. Keep the app open while you practice."])
                 }
@@ -180,7 +180,7 @@ struct HelpView: View {
                     Text("Triple-press the baton button and search from Home. Advertising times out after 60 seconds without a connection. Triple-press again if the light goes out. Stop searching or disconnect on other phones before trying this phone.")
                 }
             }
-            Section("Questions & answers") {
+            Section("Questions & Answers") {
                 qa("Why can't I see my baton?", "Check power and stay nearby. Triple-press its button to start advertising, then search again. The search stops after your chosen duration in Settings. If the baton is already connected to another phone or the debug app, disconnect it there first.")
                 qa("What if Bluetooth access is off?", "Turn Bluetooth on in iPhone Settings. If you denied access, allow Musical Baton to use Bluetooth under Settings → Privacy & Security → Bluetooth, then return and search again.")
                 qa("Why isn't it making sound?", "Check media volume and the current speaker/headphone output. Stop practice and use Test sound to check playback. Then connect, wait for setup to finish and start practice again. Firm strokes may help; choose Gentle sensitivity for smaller movements.")

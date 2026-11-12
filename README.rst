@@ -291,3 +291,47 @@ save and timeline-editing flows without Xcode, SwiftUI or an iOS simulator. The
 prototype also demonstrates connection and naming, sound/movement preferences,
 Settings, Help, the Recording Guide, confirmation dialogs and stateful editing
 controls so browser review covers the product app's user-facing workflows.
+
+The Touchpad Recording page uses title capitalization. Saved recordings in the
+editor support audible Play/Pause and Restart using the selected sound and beat
+accents. Playback stops when editing, leaving the editor, or backgrounding the app.
+
+The recording editor shows a red playback cursor using the audio playback clock.
+Hold a beat to drag it vertically, or select it and set its exact time in seconds
+(0–86400). Moving a beat is undoable; dragging pauses playback.
+
+The playback cursor refreshes at the display-driven animation cadence. Beat
+dragging uses a fixed timeline coordinate space to avoid movement feedback and
+follows the finger directly; the moving dot turns red with no selection ring.
+
+Product option labels use Title Case, including sound choices and recording
+controls. The Set Time field displays beat times rounded to three decimal places.
+
+Selected beats appear red without a highlight ring. Tap empty timeline space or
+Done Editing to deselect; tap another dot to switch selection. Beat controls keep
+the selection active. Timeline hit targets stay fixed regardless of duration.
+
+Beat gestures distinguish a quick tap (select and show editing controls) from a
+long press followed by dragging (move). The full dot target responds to taps,
+and VoiceOver activation opens the beat editor.
+
+Quick beat taps are recognized independently of the hold-and-drag gesture, so
+selection does not depend on the long-press recognizer failing first.
+
+Measure-start dots are blue with a 1 symbol for the first beat of the measure;
+selected or dragged dots remain red. Selected beat details show the stored
+measure number, or Not Numbered when none was recorded.
+
+Drag the red playback line to the right of the dots to seek. Its black time label
+shows three decimals above the right end. Seeking pauses audio during the drag
+and resumes on release if it was playing; edits preserve the playback position.
+
+A pencil beside the recording name opens inline renaming, with an accessible
+Rename Recording label and a full-size touch target.
+
+Choosing a sound in Touchpad Recording, Edit Recording, or Your Sound plays a
+short preview. Editor playback pauses for sound changes; previews stop before
+recording playback and when leaving the screen or backgrounding the app.
+
+The playback cursor is drawn as one continuous full-width line across the time
+axis and dots, with its drag target kept on the right.

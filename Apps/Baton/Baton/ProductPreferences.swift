@@ -11,7 +11,7 @@ nonisolated enum ConnectionTimePolicy {
     }
 
     static func title(seconds: Int) -> String {
-        if seconds == 0 { return "No limit" }
+        if seconds == 0 { return "No Limit" }
         return seconds < 60 ? "\(seconds) seconds" : "\(seconds / 60) minutes"
     }
 }
