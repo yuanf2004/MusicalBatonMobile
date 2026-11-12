@@ -2,6 +2,11 @@ Musical Baton iOS
 ================
 
 Two native SwiftUI / CoreBluetooth apps for iOS 17+, in one repository.
+
+New to Mac/iPhone development? Follow the
+`first-time Xcode and iPhone setup guide <Docs/FirstTimeSetup.rst>`_ for signing,
+Developer Mode, trust prompts, installation, Bluetooth and troubleshooting.
+
 Open ``MusicalBaton.xcworkspace`` in Xcode and choose a shared scheme:
 
 * **Baton Debug**: the existing BLE inspector with terminals, GATT tools,
