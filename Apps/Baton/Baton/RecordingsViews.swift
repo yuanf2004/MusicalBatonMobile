@@ -9,6 +9,7 @@ final class RecordingPlaybackController {
     private(set) var playingID: UUID?
     private(set) var position: TimeInterval = 0
     private var engine: BeatAudioEngine?
+    private var ownsSession = false
     private var task: Task<Void, Never>?
     private var startedUptime: TimeInterval = 0
     private var recording: ConductingRecording?
@@ -46,6 +47,10 @@ final class RecordingPlaybackController {
         task?.cancel(); task = nil
         engine?.stop(); engine = nil
         playingID = nil
+        if ownsSession {
+            ownsSession = false
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
     }
 
     func resume(_ value: ConductingRecording) {
@@ -60,7 +65,10 @@ final class RecordingPlaybackController {
         playingID = nil
         recording = nil
         position = 0
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        if ownsSession {
+            ownsSession = false
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
     }
 
     private func start(from offset: TimeInterval) {
@@ -69,6 +77,7 @@ final class RecordingPlaybackController {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .default)
             try session.setActive(true)
+            ownsSession = true
             let player = try BeatAudioEngine(voice: recording.currentSound)
             try player.start()
             engine = player
@@ -108,6 +117,7 @@ struct RecordingsView: View {
 
     var body: some View {
         List {
+            if let error = store.errorMessage { Text(error).foregroundStyle(.red) }
             if let recovered = store.recoveredDraft {
                 Section("Needs Attention") {
                     NavigationLink { RecordingSaveView(store: store, recording: recovered) } label: {
@@ -246,6 +256,7 @@ struct RecordingSaveView: View {
 
     var body: some View {
         Form {
+            if let error = store.errorMessage { Text(error).foregroundStyle(.red) }
             Section("Recording") {
                 TextField("Recording Name", text: $name)
                 LabeledContent("Beats", value: "\(recording.beats.count)")
@@ -269,7 +280,7 @@ struct TouchpadRecordingView: View {
     @State private var beats: [RecordedBeat] = []
     @State private var started: ContinuousClock.Instant?
     @State private var sound: ClickVoice = .click
-    @State private var preview = SoundPreview()
+    @State private var audio = TouchpadAudio()
     @Environment(\.scenePhase) private var scenePhase
     @State private var showingSave = false
     @State private var confirmingExit = false
@@ -286,7 +297,17 @@ struct TouchpadRecordingView: View {
             }
             Text("The first new-measure beat starts the timeline. It and later measure beats use a higher-pitched accent.")
                 .multilineTextAlignment(.center).foregroundStyle(.secondary)
-            Picker("Sound", selection: Binding(get: { sound }, set: { sound = $0; preview.play($0) })) { ForEach(ClickVoice.allCases) { Text($0.title.capitalized).tag($0) } }
+            Picker("Sound", selection: Binding(get: { sound }, set: {
+                guard started == nil else { return }
+                sound = $0
+                audio.prepare($0)
+                audio.play()
+            })) { ForEach(ClickVoice.allCases) { Text($0.title.capitalized).tag($0) } }
+            .disabled(started != nil)
+            if started != nil {
+                Text("Sound is locked for this recording.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
             HStack {
                 TextField("Starting Measure (optional)", text: $startingMeasureText)
                     .keyboardType(.numberPad).textFieldStyle(.roundedBorder).disabled(started != nil)
@@ -297,29 +318,52 @@ struct TouchpadRecordingView: View {
             }
             HStack(spacing: 16) {
                 Button("New Measure Beat", systemImage: "1.circle.fill") { addBeat(measure: true) }
-                    .buttonStyle(.borderedProminent).controlSize(.large)
+                    .buttonStyle(TouchpadPressStyle()).controlSize(.large)
                     .disabled(!startingMeasureText.isEmpty && validStartingMeasure == nil)
                 Button("New Beat", systemImage: "circle.fill") { addBeat(measure: false) }
-                    .buttonStyle(.bordered).controlSize(.large).disabled(started == nil)
+                    .buttonStyle(TouchpadPressStyle()).controlSize(.large).disabled(started == nil)
             }
             Text("\(beats.count) beats").font(.title.monospacedDigit())
+            if let error = audio.error { Text(error).font(.footnote).foregroundStyle(.red) }
             Spacer()
             Button("Stop And Save", systemImage: "stop.fill") { showingSave = true }.disabled(beats.isEmpty)
                 .buttonStyle(.borderedProminent)
+            Button("Stop Without Saving", role: .destructive) { confirmingExit = true }
+                .disabled(beats.isEmpty)
         }
-        .onDisappear { preview.stop() }
-        .onChange(of: scenePhase) { _, phase in if phase != .active { preview.stop() } }
+        .onAppear { audio.prepare(sound) }
+        .onDisappear { audio.stop() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { audio.prepare(sound) } else { audio.stop() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { note in
+            guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+            if type == .began { audio.stop() }
+            else if scenePhase == .active { audio.prepare(sound) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification)) { note in
+            guard let raw = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+                  let reason = AVAudioSession.RouteChangeReason(rawValue: raw),
+                  reason == .oldDeviceUnavailable || reason == .newDeviceAvailable,
+                  scenePhase == .active else { return }
+            audio.prepare(sound)
+        }
         .padding(24).background(BatonTheme.canvas).navigationTitle("Touchpad Recording")
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { beats.isEmpty ? dismiss() : (confirmingExit = true) } } }
         .confirmationDialog("Discard this touchpad recording?", isPresented: $confirmingExit) {
-            Button("Discard", role: .destructive) { dismiss() }; Button("Keep Recording", role: .cancel) {}
+            Button("Discard", role: .destructive) { audio.stop(); dismiss() }; Button("Keep Recording", role: .cancel) {}
         }
         .sheet(isPresented: $showingSave) {
-            NavigationStack { Form { TextField("Recording Name", text: $name); Button("Save") { save() }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }.batonPage("Save Recording") }
+            NavigationStack { Form { if let error = store.errorMessage { Text(error).foregroundStyle(.red) }; TextField("Recording Name", text: $name); Button("Save") { save() }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }.batonPage("Save Recording") }
         }
     }
 
     private func addBeat(measure: Bool) {
+        guard started != nil || measure else { return }
+        guard startingMeasureText.isEmpty || validStartingMeasure != nil else { return }
+        guard currentMeasure != Int.max || !measure else { return }
+        guard audio.play(accented: measure) else { return }
         let now = ContinuousClock.now
         if started == nil {
             guard measure else { return }
@@ -342,7 +386,7 @@ struct TouchpadRecordingView: View {
         let now = Date()
         let value = ConductingRecording(name: name.trimmingCharacters(in: .whitespacesAndNewlines), createdAt: now, modifiedAt: now,
                                         originalSound: sound, currentSound: sound, originalBeats: beats, beats: beats)
-        store.update(value); showingSave = false; dismiss()
+        if store.update(value) { showingSave = false; dismiss() }
     }
 }
 
@@ -369,6 +413,7 @@ struct RecordingEditorView: View {
 
     var body: some View {
         VStack(spacing: 12) {
+            if let error = store.errorMessage { Text(error).foregroundStyle(.red) }
             VStack(alignment: .leading, spacing: 8) {
                 if editingName {
                     TextField("Recording Name", text: Binding(get: { working.name }, set: { value in mutate { $0.name = value } }))
@@ -501,7 +546,7 @@ struct RecordingEditorView: View {
                     Button(role: .destructive) { confirmingBeatDelete = true } label: { Image(systemName: "trash") }
                         .accessibilityLabel("Delete selected beat")
                 }
-                Button("Save") { store.update(working); dismiss() }.disabled(!working.isNameValid)
+                Button("Save") { if store.update(working) { dismiss() } }.disabled(!working.isNameValid)
             }
         }
         .confirmationDialog("Delete this beat?", isPresented: $confirmingBeatDelete, titleVisibility: .visible) {
@@ -719,5 +764,36 @@ struct TermHelpButton: View {
         Button { showing = true } label: { Image(systemName: "questionmark.circle") }
             .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel("What does \(title) mean?")
             .alert(title, isPresented: $showing) { Button("OK", role: .cancel) {} } message: { Text(message) }
+    }
+}
+
+
+// Rhythm pads trigger once at touch-down, not when the finger is released.
+private struct TouchpadPressStyle: PrimitiveButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Pad(configuration: configuration)
+    }
+
+    private struct Pad: View {
+        let configuration: PrimitiveButtonStyle.Configuration
+        @Environment(\.isEnabled) private var isEnabled
+        @GestureState private var pressed = false
+
+        var body: some View {
+            configuration.label
+                .padding()
+                .frame(minHeight: 44)
+                .foregroundStyle(Color.white)
+                .background(BatonTheme.ultramarine.opacity(isEnabled ? (pressed ? 0.7 : 1) : 0.35),
+                            in: RoundedRectangle(cornerRadius: 12))
+                .contentShape(Rectangle())
+                .gesture(DragGesture(minimumDistance: 0)
+                    .updating($pressed) { _, pressed, _ in
+                        if !pressed && isEnabled { configuration.trigger() }
+                        pressed = true
+                    })
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { if isEnabled { configuration.trigger() } }
+        }
     }
 }

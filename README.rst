@@ -335,3 +335,21 @@ recording playback and when leaving the screen or backgrounding the app.
 
 The playback cursor is drawn as one continuous full-width line across the time
 axis and dots, with its drag target kept on the right.
+
+Recording saves commit atomically before updating the library or clearing recovery
+data; failures remain visible and can be retried. WAV files stream in 4096-frame
+chunks with RIFF size validation instead of allocating the full audio in memory.
+Touchpad beat buttons preview the chosen sound, accented for new measures.
+
+Touchpad audio is prepared on entry and sound changes, reusing normal/accented
+buffers per tap with a short preferred audio buffer. It stops on exit/background
+and recovers after interruptions or output changes. Stop Without Saving offers
+a confirmed discard. Actual latency depends on the iPhone and output route.
+
+Touchpad rhythm pads fire once on touch-down, including normal accessibility
+activation. Recording playback only releases audio sessions it owns, preventing
+list dismissal from disabling touchpad audio on entry. A stopped touchpad engine
+automatically re-prepares the selected sound on the next tap.
+
+Touchpad sound selection locks after the first beat starts the recording, keeping
+its audio and saved sound consistent. Choose and preview sounds before starting.

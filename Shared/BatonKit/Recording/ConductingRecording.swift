@@ -43,13 +43,26 @@ private nonisolated struct RecordingDraft: Codable, Sendable {
 private nonisolated final class RecordingDiskWriter: @unchecked Sendable {
     private let queue = DispatchQueue(label: "MusicalBaton.recordings", qos: .utility)
 
-    func write<T: Encodable & Sendable>(_ value: T, to url: URL) {
-        queue.async {
+    func write<T: Encodable & Sendable>(_ value: T, to url: URL) throws {
+        try queue.sync {
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            guard let data = try? encoder.encode(value) else { return }
-            try? data.write(to: url, options: .atomic)
+            let data = try encoder.encode(value)
+            try data.write(to: url, options: .atomic)
+        }
+    }
+
+    func writeDraft<T: Encodable & Sendable>(_ value: T, to url: URL,
+                                             completion: @escaping @Sendable (String?) -> Void) {
+        queue.async {
+            do {
+                let encoder = JSONEncoder()
+                encoder.dateEncodingStrategy = .iso8601
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                try encoder.encode(value).write(to: url, options: .atomic)
+                completion(nil)
+            } catch { completion(error.localizedDescription) }
         }
     }
 
@@ -132,9 +145,7 @@ final class ConductingRecordingStore {
         value.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard value.isNameValid else { return false }
         value.modifiedAt = Date()
-        recordings.removeAll { $0.id == value.id }
-        recordings.insert(value, at: 0)
-        persistRecordings()
+        guard update(value) else { return false }
         clearDraftState()
         return true
     }
@@ -147,18 +158,22 @@ final class ConductingRecordingStore {
         clearDraftState()
     }
 
-    func update(_ recording: ConductingRecording) {
+    @discardableResult
+    func update(_ recording: ConductingRecording) -> Bool {
         var value = recording
+        guard value.isNameValid else {
+            errorMessage = "Use a recording name between 1 and 80 characters."
+            return false
+        }
         value.modifiedAt = Date()
-        recordings.removeAll { $0.id == value.id }
-        recordings.append(value)
-        recordings.sort { $0.modifiedAt > $1.modifiedAt }
-        persistRecordings()
+        var next = recordings.filter { $0.id != value.id }
+        next.append(value)
+        next.sort { $0.modifiedAt > $1.modifiedAt }
+        return persistRecordings(next)
     }
 
     func delete(ids: Set<UUID>) {
-        recordings.removeAll { ids.contains($0.id) }
-        persistRecordings()
+        _ = persistRecordings(recordings.filter { !ids.contains($0.id) })
     }
 
     private func recording(from draft: RecordingDraft, name: String) -> ConductingRecording {
@@ -176,11 +191,24 @@ final class ConductingRecordingStore {
     }
 
     private func persistDraft(_ value: RecordingDraft) {
-        writer.write(value, to: draftURL)
+        writer.writeDraft(value, to: draftURL) { [weak self] error in
+            guard let error else { return }
+            Task { @MainActor [weak self] in
+                self?.errorMessage = "Could not save recovery data: \(error)"
+            }
+        }
     }
 
-    private func persistRecordings() {
-        writer.write(recordings, to: recordingsURL)
+    private func persistRecordings(_ next: [ConductingRecording]) -> Bool {
+        do {
+            try writer.write(next, to: recordingsURL)
+            recordings = next
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = "Could not save recordings: \(error.localizedDescription)"
+            return false
+        }
     }
 
     private func defaultName(for date: Date) -> String {
@@ -192,7 +220,14 @@ final class ConductingRecordingStore {
 }
 
 nonisolated enum RecordingAudioExporter {
-    static func wavData(for recording: ConductingRecording) -> Data {
+    enum ExportError: LocalizedError {
+        case tooLong
+        var errorDescription: String? { "This recording is too long for this WAV export." }
+    }
+
+    static func wavData(for recording: ConductingRecording) throws -> Data {
+        guard recording.duration.isFinite, recording.duration <= 60,
+              recording.beats.allSatisfy({ $0.elapsedMicroseconds >= 0 }) else { throw ExportError.tooLong }
         let rate = 44_100
         let tailFrames = Int(Double(rate) * 0.06)
         let lastFrame = recording.beats.map { Int($0.elapsedSeconds * Double(rate)) }.max() ?? 0
@@ -226,7 +261,62 @@ nonisolated enum RecordingAudioExporter {
         let safe = recording.name.replacingOccurrences(of: "[^A-Za-z0-9 _-]", with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces).prefix(50)
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(safe.isEmpty ? "Musical Baton" : String(safe))-\(recording.id.uuidString.prefix(8)).wav")
-        try wavData(for: recording).write(to: url, options: .atomic)
+        let rate = 44_100
+        guard recording.duration.isFinite, recording.duration >= 0,
+              recording.duration * Double(rate) * 2 < Double(UInt32.max - 36),
+              recording.beats.allSatisfy({ $0.elapsedMicroseconds >= 0 }) else { throw ExportError.tooLong }
+        let frames = max(1, Int((recording.beats.map(\.elapsedSeconds).max() ?? 0) * Double(rate)) + Int(Double(rate) * 0.06))
+        let normal = pcmSamples(voice: recording.currentSound, accented: false)
+        let accent = pcmSamples(voice: recording.currentSound, accented: true)
+        let beats = recording.beats.sorted { $0.elapsedMicroseconds < $1.elapsedMicroseconds }
+        let temporary = url.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".wav")
+        FileManager.default.createFile(atPath: temporary.path, contents: nil)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let file = try FileHandle(forWritingTo: temporary)
+        do {
+            var header = Data("RIFF".utf8)
+            append(UInt32(36 + frames * 2), to: &header)
+            header.append(contentsOf: "WAVEfmt ".utf8)
+            append(UInt32(16), to: &header); append(UInt16(1), to: &header); append(UInt16(1), to: &header)
+            append(UInt32(rate), to: &header); append(UInt32(rate * 2), to: &header)
+            append(UInt16(2), to: &header); append(UInt16(16), to: &header)
+            header.append(contentsOf: "data".utf8); append(UInt32(frames * 2), to: &header)
+            try file.write(contentsOf: header)
+            var first = 0
+            for start in stride(from: 0, to: frames, by: 4096) {
+                let end = min(frames, start + 4096)
+                var samples = [Double](repeating: 0, count: end - start)
+                while first < beats.count {
+                    let beat = beats[first]
+                    let source = beat.isAccented || beat.isNewMeasure ? accent : normal
+                    if Int(beat.elapsedSeconds * Double(rate)) + source.count > start { break }
+                    first += 1
+                }
+                var index = first
+                while index < beats.count {
+                    let beat = beats[index]
+                    let offset = Int(beat.elapsedSeconds * Double(rate))
+                    if offset >= end { break }
+                    let source = beat.isAccented || beat.isNewMeasure ? accent : normal
+                    let lower = max(start, offset)
+                    let upper = min(end, offset + source.count)
+                    if lower < upper {
+                        for frame in lower..<upper { samples[frame - start] += source[frame - offset] }
+                    }
+                    index += 1
+                }
+                var pcm = Data(capacity: samples.count * 2)
+                for sample in samples { append(UInt16(bitPattern: Int16(max(-1, min(1, sample)) * 32767)), to: &pcm) }
+                try file.write(contentsOf: pcm)
+            }
+            try file.close()
+            if FileManager.default.fileExists(atPath: url.path) {
+                _ = try FileManager.default.replaceItemAt(url, withItemAt: temporary)
+            } else { try FileManager.default.moveItem(at: temporary, to: url) }
+        } catch {
+            try? file.close()
+            throw error
+        }
         return url
     }
 
