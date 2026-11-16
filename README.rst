@@ -331,7 +331,8 @@ and VoiceOver activation opens the beat editor.
 Quick beat taps are recognized independently of the hold-and-drag gesture, so
 selection does not depend on the long-press recognizer failing first.
 
-Measure-start dots are blue with a 1 symbol for the first beat of the measure;
+Measure-start dots are blue with a small white center dot for the first beat
+of the measure;
 selected or dragged dots remain red. Selected beat details show the stored
 measure number, or Not Numbered when none was recorded.
 
@@ -416,3 +417,26 @@ New baton and touchpad recording save screens begin with an empty, focused name
 field and the native gray Name Your Recording placeholder. Save stays disabled
 until a nonblank name of at most 80 characters is entered. Existing saved
 recording names remain unchanged.
+
+Editor measure and beat positions
+--------------------------------
+Selected dots show their measure and beat within that measure. Positions are
+recalculated after moves (on drag release), insertions, deletions and measure
+marker changes. The first beat begins the starting measure, defaulting to 1;
+each later New Measure marker increments the measure and resets the beat to 1.
+Custom starting measures are preserved. Legacy files are numbered on load;
+original beats remain untouched for Revert. Undo/redo retain numbered snapshots.
+Ordinary edits maintain sorted order by linear insertion and recalculate in
+O(N). Loading or reverting an unsorted legacy timeline may require O(N log N)
+sorting first. Equal-time beats retain their order; moved/inserted beats go
+after existing beats at that time. Optional metadata preserves old-file decoding.
+
+The recording editor stacks Accent and New Measure in separate rows, each
+with its own help button.
+
+Saved-recording row action icons use the primary text color, including the
+play-from-measure menu: black in light mode and white in dark mode.
+
+The measure-playback menu explicitly overrides the blue app tint with the
+primary text color, and row icons use Color.primary rather than an inherited
+hierarchical foreground style.

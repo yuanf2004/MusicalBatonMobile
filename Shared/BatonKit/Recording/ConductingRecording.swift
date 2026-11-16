@@ -8,6 +8,7 @@ nonisolated struct RecordedBeat: Codable, Identifiable, Equatable, Sendable {
     var isOriginal = true
     var isModified = false
     var measureNumber: Int?
+    var beatNumber: Int?
     var isAccented = false
 
     var elapsedSeconds: TimeInterval { Double(elapsedMicroseconds) / 1_000_000 }
@@ -25,6 +26,40 @@ nonisolated struct ConductingRecording: Codable, Identifiable, Equatable, Sendab
     var currentSound: ClickVoice
     var originalBeats: [RecordedBeat]
     var beats: [RecordedBeat]
+    // Optional for decoding existing recordings; resolved once before editing.
+    var startingMeasureNumber: Int?
+
+    /// Existing files may be unsorted. Edits keep order, making this pass O(N).
+    mutating func recalculateBeatPositions() {
+        if startingMeasureNumber == nil {
+            let source = originalBeats.isEmpty ? beats : originalBeats
+            startingMeasureNumber = source.filter { ($0.measureNumber ?? 0) > 0 }
+                .min { $0.elapsedMicroseconds < $1.elapsedMicroseconds }?.measureNumber ?? 1
+        }
+        if zip(beats, beats.dropFirst()).contains(where: { $0.elapsedMicroseconds > $1.elapsedMicroseconds }) {
+            beats = beats.enumerated().sorted {
+                if $0.element.elapsedMicroseconds == $1.element.elapsedMicroseconds { return $0.offset < $1.offset }
+                return $0.element.elapsedMicroseconds < $1.element.elapsedMicroseconds
+            }.map(\.element)
+        }
+        var measure = max(1, startingMeasureNumber ?? 1)
+        var beat = 0
+        for index in beats.indices {
+            if index > 0 && beats[index].isNewMeasure {
+                if measure < Int.max { measure += 1 }
+                beat = 0
+            }
+            beat += 1
+            beats[index].measureNumber = measure
+            beats[index].beatNumber = beat
+        }
+    }
+
+    /// Keep the timeline sorted with a linear insertion, including a moved beat.
+    mutating func insertBeatInTimeline(_ beat: RecordedBeat) {
+        let index = beats.firstIndex { $0.elapsedMicroseconds > beat.elapsedMicroseconds } ?? beats.endIndex
+        beats.insert(beat, at: index)
+    }
 
     var duration: TimeInterval { (beats.map(\.elapsedSeconds).max() ?? 0) + (beats.isEmpty ? 0 : 0.06) }
     var isNameValid: Bool {
@@ -97,6 +132,11 @@ final class ConductingRecordingStore {
             decoder.dateDecodingStrategy = .iso8601
             if FileManager.default.fileExists(atPath: recordingsURL.path) {
                 recordings = try decoder.decode([ConductingRecording].self, from: Data(contentsOf: recordingsURL))
+                    .map { recording in
+                        var value = recording
+                        value.recalculateBeatPositions()
+                        return value
+                    }
                     .sorted { $0.modifiedAt > $1.modifiedAt }
             }
             if FileManager.default.fileExists(atPath: draftURL.path) {
@@ -165,6 +205,7 @@ final class ConductingRecordingStore {
             errorMessage = "Use a recording name between 1 and 80 characters."
             return false
         }
+        value.recalculateBeatPositions()
         value.modifiedAt = Date()
         var next = recordings.filter { $0.id != value.id }
         next.append(value)

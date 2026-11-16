@@ -140,7 +140,7 @@ struct RecordingsView: View {
                     HStack(spacing: 12) {
                         if selecting {
                             Button { toggleSelection(recording.id) } label: {
-                                Image(systemName: selected.contains(recording.id) ? "checkmark.square.fill" : "square")
+                                Image(systemName: selected.contains(recording.id) ? "checkmark.square.fill" : "square").foregroundStyle(Color.primary)
                             }.buttonStyle(BatonPressStyle()).accessibilityLabel(selected.contains(recording.id) ? "Deselect \(recording.name)" : "Select \(recording.name)")
                         }
                         VStack(alignment: .leading, spacing: 4) {
@@ -155,25 +155,26 @@ struct RecordingsView: View {
                             if playback.playingID == recording.id { playback.pause() }
                             else if playback.position > 0 { playback.resume(recording) }
                             else { playback.toggle(recording) }
-                        } label: { Image(systemName: playback.playingID == recording.id ? "pause.fill" : "play.fill") }
+                        } label: { Image(systemName: playback.playingID == recording.id ? "pause.fill" : "play.fill").foregroundStyle(Color.primary) }
                         .buttonStyle(BatonPressStyle()).accessibilityLabel(playback.playingID == recording.id ? "Pause \(recording.name)" : "Play \(recording.name)")
                         if !measures(in: recording).isEmpty {
                             Menu {
                                 ForEach(measures(in: recording), id: \.self) { measure in
                                     Button("Measure \(measure)") { playback.play(recording, fromMeasure: measure) }
                                 }
-                            } label: { Image(systemName: "text.line.first.and.arrowtriangle.forward") }
+                            } label: { Image(systemName: "text.line.first.and.arrowtriangle.forward").foregroundStyle(Color.primary) }
+                            .tint(Color.primary)
                             .accessibilityLabel("Play \(recording.name) from a measure")
                         }
                         NavigationLink { RecordingEditorView(store: store, recording: recording) } label: {
-                            Image(systemName: "pencil")
+                            Image(systemName: "pencil").foregroundStyle(Color.primary)
                         }.accessibilityLabel("Edit \(recording.name)")
                         Button { export(recording) } label: {
-                            if exportingID == recording.id { ProgressView() } else { Image(systemName: "square.and.arrow.up") }
+                            if exportingID == recording.id { ProgressView().tint(Color.primary) } else { Image(systemName: "square.and.arrow.up").foregroundStyle(Color.primary) }
                         }
                             .buttonStyle(BatonPressStyle()).accessibilityLabel("Export \(recording.name) as audio")
                             .disabled(exportingID != nil)
-                        Button(role: .destructive) { singleDelete = recording } label: { Image(systemName: "trash") }
+                        Button(role: .destructive) { singleDelete = recording } label: { Image(systemName: "trash").foregroundStyle(Color.primary) }
                             .buttonStyle(BatonPressStyle()).accessibilityLabel("Delete \(recording.name)")
                     }
                     .contentShape(Rectangle())
@@ -447,7 +448,10 @@ struct RecordingEditorView: View {
     @Environment(\.dismiss) private var dismiss
 
     init(store: ConductingRecordingStore, recording: ConductingRecording) {
-        self.store = store; self.recording = recording; _working = State(initialValue: recording)
+        self.store = store; self.recording = recording
+        var numbered = recording
+        numbered.recalculateBeatPositions()
+        _working = State(initialValue: numbered)
     }
 
     var body: some View {
@@ -511,7 +515,7 @@ struct RecordingEditorView: View {
                 RecordingTimeline(beats: working.beats, selectedBeat: selectedBeat, addingBeat: addingBeat, playback: playback, seek: { playback.seek(working, to: $0) }, resumePlayback: { preview.stop(); playback.resume(working) }) { id in
                     selectedBeat = id
                 } addAt: { seconds in
-                    mutate { $0.beats.append(RecordedBeat(elapsedMicroseconds: Int64(seconds * 1_000_000), isOriginal: false, isModified: true)) }
+                    mutate { $0.insertBeatInTimeline(RecordedBeat(elapsedMicroseconds: Int64(seconds * 1_000_000), isOriginal: false, isModified: true)) }
                 }
                 moveBeat: { id, seconds in
                     editBeat(id) { $0.elapsedMicroseconds = Int64((seconds * 1_000_000).rounded()) }
@@ -532,14 +536,17 @@ struct RecordingEditorView: View {
                         Button("Done Editing") { self.selectedBeat = nil }
                     }
                     Text("Selected beat · \(String(format: "%.3f", beat.elapsedSeconds)) s").font(.headline)
-                    LabeledContent("Measure", value: beat.measureNumber.map { String($0) } ?? "Not Numbered")
+                    LabeledContent("Measure", value: beat.measureNumber.map { String($0) } ?? "—")
+                    LabeledContent("Beat in Measure", value: beat.beatNumber.map { String($0) } ?? "—")
                     if beat.isNewMeasure {
-                        Text("The 1 marks the first beat of this measure.")
+                        Text("The white center dot marks the first beat of this measure.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     HStack {
                         Toggle("Accent", isOn: Binding(get: { beat.isAccented }, set: { value in editBeat(selectedBeat) { $0.isAccented = value } }))
                         TermHelpButton(title: "Accent", message: "An accented beat plays a higher-frequency version of the selected sound so it stands out.")
+                    }
+                    HStack {
                         Toggle("New Measure", isOn: Binding(get: { beat.isNewMeasure }, set: { value in editBeat(selectedBeat) { $0.isNewMeasure = value; if value { $0.isAccented = true } } }))
                         TermHelpButton(title: "New Measure", message: "Marks this as the first beat of a measure. Turning it on also enables Accent.")
                     }
@@ -607,12 +614,24 @@ struct RecordingEditorView: View {
         let position = playback.currentPosition
         playback.pause()
         undoStack.append(working); redoStack.removeAll(); change(&working)
+        working.recalculateBeatPositions()
         playback.seek(working, to: position)
     }
     private func undo() { playback.stop(); guard let value = undoStack.popLast() else { return }; redoStack.append(working); working = value }
     private func redo() { playback.stop(); guard let value = redoStack.popLast() else { return }; undoStack.append(working); working = value }
     private func editBeat(_ id: UUID, change: (inout RecordedBeat) -> Void) {
-        mutate { value in guard let index = value.beats.firstIndex(where: { $0.id == id }) else { return }; change(&value.beats[index]); value.beats[index].isModified = true }
+        mutate { value in
+            guard let index = value.beats.firstIndex(where: { $0.id == id }) else { return }
+            var beat = value.beats[index]
+            change(&beat)
+            beat.isModified = true
+            if beat.elapsedMicroseconds == value.beats[index].elapsedMicroseconds {
+                value.beats[index] = beat
+            } else {
+                value.beats.remove(at: index)
+                value.insertBeatInTimeline(beat)
+            }
+        }
     }
     private func shift(_ id: UUID, by amount: Int64) { editBeat(id) { $0.elapsedMicroseconds = max(0, $0.elapsedMicroseconds + amount) } }
     private func deleteSelectedBeat() {
@@ -638,7 +657,8 @@ struct RecordingGuideView: View {
                 Label("Touchpad recordings can begin at an optional measure number. Numbered recordings can play from any stored measure.", systemImage: "number")
             }
             Section("Editor") {
-                Label("Blue dots mark regular beats and measure starts. A 1 marks the first beat of a measure, not its measure number. Other accented beats are orange. The selected beat turns red. Tap empty timeline space or Done Editing to clear the selection.", systemImage: "circle.inset.filled")
+                Label("Select a dot to see its measure and beat within that measure. Moving, adding or deleting beats, or changing New Measure, recalculates these positions. A new measure starts at beat 1; recordings without measure markers start at measure 1. Positions update when you release a dragged dot.", systemImage: "number")
+                Label("Blue dots mark regular beats and measure starts. A white center dot marks the first beat of a measure. Other accented beats are orange. The selected beat turns red. Tap empty timeline space or Done Editing to clear the selection.", systemImage: "circle.inset.filled")
                 Label("The timeline scrolls vertically. Turn on Add beat, then tap its time position to insert one.", systemImage: "plus.circle")
                 Label("The timeline includes open time after the final beat so you can add later beats without moving an existing one first.", systemImage: "arrow.down.to.line")
                 Label("Accent and New measure switches show and change the selected beat's current state. A new measure automatically enables accent.", systemImage: "switch.2")
@@ -684,9 +704,15 @@ private struct RecordingTimeline: View {
                 }
                 ForEach(beats) { beat in
                     let y = CGFloat(beat.elapsedSeconds / duration) * proxy.size.height + (dragging == beat.id ? dragOffset : 0)
-                    Image(systemName: beat.isNewMeasure ? "1.circle.fill" : (beat.isAccented ? "circle.inset.filled" : "circle.fill"))
+                    Image(systemName: beat.isNewMeasure ? "circle.fill" : (beat.isAccented ? "circle.inset.filled" : "circle.fill"))
                         .font(.title3)
                         .foregroundStyle(selectedBeat == beat.id || dragging == beat.id ? Color.red : beat.isNewMeasure ? BatonTheme.ultramarine : beat.isAccented ? Color.orange : BatonTheme.ultramarine)
+                        .overlay {
+                            if beat.isNewMeasure {
+                                Circle().fill(.white).frame(width: 7, height: 7)
+                                    .accessibilityHidden(true)
+                            }
+                        }
                         .frame(width: 48, height: 44)
                         .contentShape(Rectangle())
                     .onTapGesture { select(beat.id) }
