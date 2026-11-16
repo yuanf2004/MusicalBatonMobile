@@ -23,3 +23,5 @@ compile "$core/Models/ConductingProfile.swift" "$core/Conducting/BeatSound.swift
 "$out/conducting-recordings"
 compile "$core/Models/BatonMotionPacket.swift" "$core/Models/BatonIdentity.swift" Tests/BatonIdentityChecks.swift -o "$out/identity"
 "$out/identity"
+compile "$core/Models/BatonPracticePacket.swift" Tests/PracticePacketChecks.swift -o "$out/practice"
+"$out/practice"

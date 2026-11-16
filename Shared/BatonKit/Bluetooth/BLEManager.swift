@@ -16,6 +16,89 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
     private(set) var services: [BLEService] = []
     private(set) var logs: [BLELogEntry] = []
     var errorMessage: String?
+    var remotePracticeAllowed = false
+    private(set) var batonPracticeState: BatonPracticePacket.State?
+    @ObservationIgnored private var practicePolling: Task<Void, Never>?
+    @ObservationIgnored private var practiceConfirmed = false
+    @ObservationIgnored private var practiceCommandSequence: UInt16 = 0
+    @ObservationIgnored private var practiceCommandActive = false
+    @ObservationIgnored private var lastPracticeReply: TimeInterval?
+    @ObservationIgnored private var holdSequence: UInt8?
+
+    private var practiceCharacteristic: BLECharacteristic? {
+        services.flatMap(\.characteristics).first { $0.isBatonPractice }
+    }
+
+    private func writePractice(_ active: Bool) {
+        guard let model = practiceCharacteristic, !model.writePending,
+              let peripheral = usablePeripheral(for: model) else { return }
+        if active != practiceCommandActive {
+            practiceCommandSequence &+= 1
+            practiceCommandActive = active
+        }
+        model.writePending = true
+        peripheral.writeValue(BatonPracticePacket.command(active: active, sequence: practiceCommandSequence),
+                              for: model.characteristic, type: .withResponse)
+    }
+
+    private func startPracticePolling() {
+        practicePolling?.cancel()
+        holdSequence = nil
+        lastPracticeReply = nil
+        practiceConfirmed = false
+        practicePolling = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self, self.isConnected, let model = self.practiceCharacteristic else { return }
+                let now = ProcessInfo.processInfo.systemUptime
+                if let last = self.lastPracticeReply, now - last > 3, self.conducting.isEnabled {
+                    self.stopConducting(reason: "Baton control timed out. Start practice again.")
+                }
+                // Never renew an active lease after a stale connection or app suspension.
+                let fresh = self.lastPracticeReply.map { now - $0 <= 3 } ?? false
+                self.writePractice(fresh && self.conducting.isEnabled && self.profileSettingsApplied)
+                if !model.readPending { self.read(model) }
+                do { try await Task.sleep(for: .seconds(1)) } catch { return }
+            }
+        }
+    }
+
+    private func receivePractice(_ data: Data) {
+        guard let packet = BatonPracticePacket(data: data) else {
+            stopConducting(reason: "Invalid baton practice response.")
+            return
+        }
+        let now = ProcessInfo.processInfo.systemUptime
+        let fresh = lastPracticeReply.map { now - $0 <= 3 } ?? false
+        lastPracticeReply = now
+        batonPracticeState = packet.state
+        let previous = holdSequence
+        holdSequence = packet.holdSequence
+        if fresh, let previous, previous != packet.holdSequence {
+            // Multiple requests between polls cancel in pairs; never replay on connection.
+            if (packet.holdSequence &- previous) % 2 == 1 {
+                if conducting.isEnabled { stopConducting() }
+                else if remotePracticeAllowed { setConductingMode(true) }
+            }
+        }
+        guard packet.commandSequence == practiceCommandSequence else { return }
+        if packet.state == .failed {
+            stopConducting(reason: "The baton could not change its sensor sampling rate.")
+            return
+        }
+        if packet.state == .calibrating, conducting.isEnabled {
+            practiceConfirmed = false
+            conducting.notificationState(ready: false, calibrating: true)
+            // Calibration needs a still baton, not an arbitrary setup deadline.
+            // The polling timeout and firmware lease still guard link failure.
+            beatSubscriptionTimeout?.cancel()
+        } else if packet.state == .active, conducting.isEnabled, profileSettingsApplied {
+            practiceConfirmed = true
+            updateConductingReadiness()
+        } else if packet.state == .idle, practiceConfirmed, conducting.isEnabled {
+            stopConducting(reason: "The baton returned to low-power idle. Start practice again.")
+        }
+    }
+
     private(set) var batonDeviceName: String?
     private(set) var isRenamingBaton = false
     private(set) var batonNameMessage: String?
@@ -140,6 +223,11 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
     func setConductingMode(_ enabled: Bool) {
         guard enabled else { stopConducting(); return }
         guard !conducting.isEnabled else { return }
+        guard practiceCharacteristic == nil || lastPracticeReply != nil else {
+            conducting.fail("Waiting for baton power status. Try Start Practice again in a moment.")
+            return
+        }
+        practiceConfirmed = false
         guard !isRenamingBaton else {
             conducting.fail("Wait for your baton name to finish saving before starting practice.")
             return
@@ -191,13 +279,15 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
     private func updateConductingReadiness() {
         let motionReady = conducting.filterMode != .gesture ||
             (batonMotionCharacteristic?.isNotifying == true && batonMotionCharacteristic?.notificationPending == false)
-        let ready = motionReady && profileSettingsApplied && batonBeatCharacteristic?.isNotifying == true
+        let ready = (practiceCharacteristic == nil || practiceConfirmed) && motionReady && profileSettingsApplied && batonBeatCharacteristic?.isNotifying == true
             && batonBeatCharacteristic?.notificationPending == false
-        conducting.notificationState(ready: ready)
+        conducting.notificationState(ready: ready, calibrating: batonPracticeState == .calibrating)
         if ready { beatSubscriptionTimeout?.cancel() }
     }
 
     func stopConducting(reason: String = "Conducting Mode is off.") {
+        practiceConfirmed = false
+        if practiceCommandActive { writePractice(false) }
         beatSubscriptionTimeout?.cancel()
         beatSubscriptionTimeout = nil
         pendingProfileSettings = nil
@@ -358,6 +448,12 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
     }
 
     private func resetConnection() {
+        practicePolling?.cancel()
+        practicePolling = nil
+        lastPracticeReply = nil
+        batonPracticeState = nil
+        holdSequence = nil
+        practiceConfirmed = false
         if isRenamingBaton { finishNameRequest(error: "Disconnected before the saved name was confirmed. Reconnect to check the baton name.") }
         batonDeviceName = nil
         stopConducting()
@@ -473,6 +569,9 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
         for model in serviceModel.characteristics {
             log("Characteristic discovered [\(service.uuid)]: \(model.characteristic.uuid)")
             if model.isBatonName, model.characteristic.properties.contains(.read) { read(model) }
+            if model.isBatonPractice, model.characteristic.properties.contains([.read, .write]) {
+                startPracticePolling()
+            }
         }
     }
 
@@ -482,6 +581,7 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
         guard let model = model(for: characteristic) else { return }
         model.readPending = false
         if let error {
+            if model.isBatonPractice { stopConducting(reason: "Baton control failed: \(error.localizedDescription)") }
             if model.isBatonName, isRenamingBaton { finishNameRequest(error: error.localizedDescription) }
             if model.isBatonSettings, pendingProfileSettings != nil {
                 stopConducting()
@@ -493,10 +593,12 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
         model.error = nil
         model.updateValue(characteristic.value)
         if model.isBatonName, let data = characteristic.value { receiveBatonName(data) }
+        if model.isBatonPractice, let data = characteristic.value { receivePractice(data) }
         if model.isBatonSettings, let expected = pendingProfileSettings, conducting.isEnabled {
             pendingProfileSettings = nil
             if characteristic.value == expected {
                 profileSettingsApplied = true
+                writePractice(true)
                 updateConductingReadiness()
                 log("Conducting sensitivity confirmed by baton")
             } else {
@@ -557,6 +659,7 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
         guard let model = model(for: characteristic) else { return }
         model.writePending = false
         if let error {
+            if model.isBatonPractice { stopConducting(reason: "Baton control failed: \(error.localizedDescription)") }
             if model.isBatonName, isRenamingBaton { finishNameRequest(error: error.localizedDescription) }
             if model.isBatonSettings, pendingProfileSettings != nil {
                 stopConducting()
@@ -565,6 +668,7 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
             characteristicError("Write failed: \(error.localizedDescription)", model)
             return
         }
+        if model.isBatonPractice, !conducting.isEnabled, practiceCommandActive { writePractice(false) }
         if model.isBatonName, requestedBatonName != nil { pollSavedName() }
         if model.isBatonSettings, pendingProfileSettings != nil, conducting.isEnabled {
             // Write acknowledgement alone is not enough; verify the stored setting.

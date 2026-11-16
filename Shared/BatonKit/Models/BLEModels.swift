@@ -44,6 +44,11 @@ final class BLECharacteristic: Identifiable {
         updateValue(characteristic.value)
     }
 
+    var isBatonPractice: Bool {
+        characteristic.service?.uuid.uuidString.uppercased() == BatonBeatPacket.serviceUUID &&
+            characteristic.uuid.uuidString.uppercased() == BatonPracticePacket.characteristicUUID
+    }
+
     var isBatonName: Bool {
         BatonIdentity.matchesName(serviceUUID: characteristic.service?.uuid.uuidString,
                                   characteristicUUID: characteristic.uuid.uuidString)

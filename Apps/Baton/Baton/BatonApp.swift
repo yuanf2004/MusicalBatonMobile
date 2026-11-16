@@ -114,6 +114,7 @@ struct PracticeView: View {
             }
         }
         .onChange(of: scenePhase) { _, phase in
+            manager.remotePracticeAllowed = phase == .active && !showingRecordingSave
             if phase != .active {
                 manager.stopConducting(reason: "Practice paused. Tap Start practice when you return.")
                 session.stopScanning()
@@ -131,12 +132,16 @@ struct PracticeView: View {
             if session.recordings.finishCapture() != nil { showingRecordingSave = true }
         }
         .onChange(of: manager.batonMotionCharacteristic?.value) { _, _ in session.motionReceived() }
+        .onChange(of: showingRecordingSave) { _, showing in
+            manager.remotePracticeAllowed = scenePhase == .active && !showing
+        }
         .task {
             if !recordingPreferenceLoaded {
                 recordNextSession = session.preferences.recordSessionsByDefault
                 recordingPreferenceLoaded = true
                 if session.recordings.recoveredDraft != nil { showingRecordingSave = true }
             }
+            manager.remotePracticeAllowed = scenePhase == .active && !showingRecordingSave
             while !Task.isCancelled {
                 session.tick()
                 do { try await Task.sleep(for: .seconds(1)) } catch { return }
@@ -187,8 +192,10 @@ struct PracticeView: View {
             Text("Baton Health").font(BatonTheme.serif(28, relativeTo: .title2))
                 .foregroundStyle(BatonTheme.ultramarine)
             Label(manager.isDisconnecting ? "Disconnecting" : "Connected", systemImage: "antenna.radiowaves.left.and.right")
-            Label(session.motionIsFresh ? "Receiving motion" : "Waiting for motion",
-                  systemImage: session.motionIsFresh ? "waveform.path" : "clock")
+            Label(manager.batonPracticeState == .idle ? "Low-power idle" :
+                    (session.motionIsFresh ? "Receiving motion" : "Waiting for motion"),
+                  systemImage: manager.batonPracticeState == .idle ? "leaf" :
+                    (session.motionIsFresh ? "waveform.path" : "clock"))
                 .foregroundStyle(.secondary)
             if let remaining = session.connectionRemaining {
                 LabeledContent("Time Remaining", value: "\(remaining / 60)m \(remaining % 60)s")
@@ -203,14 +210,19 @@ struct PracticeView: View {
 
     private var practiceCard: some View {
         VStack(spacing: 20) {
-            Image(systemName: manager.conducting.isReady ? "waveform" : "music.note")
+            Image(systemName: manager.conducting.isEnabled && manager.batonPracticeState == .calibrating
+                  ? "pause.fill" : (manager.conducting.isReady ? "waveform" : "music.note"))
                 .font(.system(size: 48)).foregroundStyle(BatonTheme.ultramarine)
                 .accessibilityHidden(true)
-            Text(manager.conducting.isReady ? "Follow your rhythm" : "Ready when you are")
+            Text(manager.conducting.isEnabled && manager.batonPracticeState == .calibrating
+                 ? "Hold still to calibrate"
+                 : (manager.conducting.isReady ? "Follow your rhythm" : "Ready when you are"))
                 .font(BatonTheme.serif(34, relativeTo: .title))
                 .foregroundStyle(BatonTheme.ultramarine)
             Text(manager.conducting.isEnabled
-                 ? (manager.conducting.isReady ? "Hold still for a moment, then conduct. Each accepted stroke plays your sound." : "Preparing your baton and sound…")
+                 ? (manager.conducting.isReady ? "Hold still for a moment, then conduct. Each accepted stroke plays your sound." : (manager.batonPracticeState == .calibrating
+                    ? "Keep the baton still for a second. Beat tracking starts when calibration finishes."
+                    : "Preparing your baton and sound…"))
                  : "Choose a comfortable grip and give yourself room to move.")
                 .multilineTextAlignment(.center).foregroundStyle(.secondary)
             if let error = manager.conducting.error {

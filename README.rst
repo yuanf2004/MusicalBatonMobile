@@ -378,3 +378,36 @@ New Beat advances the beat within that measure; the next New Measure Beat
 advances the measure and resets its beat to 1. Counters show dashes before the
 first beat and only advance when a beat is successfully played and recorded.
 New touchpad recordings default to numbered measures starting at 1.
+
+Synchronized practice power control
+-----------------------------------
+Practice supports legacy firmware without def5 using the original notification
+and sensitivity handshake; low-power switching and button control require def5. The app confirms the
+baton's actual active sensor state before marking practice ready or capturing
+beats, polls once per second, and renews an active lease. Stop, backgrounding,
+control errors and disconnect stop local practice; firmware independently idles
+after five seconds without renewal. Reconnect never resumes practice.
+A half-second (500 ms) baton hold toggles practice in the foreground and respects Record
+this session. Starts are blocked while the recording-save sheet is open.
+Firmware uses 12.5 Hz IMU idle ODR and the existing 416 Hz practice ODR; idle
+sends no motion telemetry; the product health card displays Low-power idle.
+Hold requests received after a stale connection are discarded to prevent replay
+when returning from suspension.
+Both apps retain legacy practice support. Raw debug BLE tools
+remain available. Hardware testing must verify power draw, sensor settling,
+hold timing, acknowledgment races and disconnect/background behavior.
+
+Power-status version 2 adds an explicit calibrating state. The app displays
+Hold still to calibrate and waits for confirmed calibration before counting or
+playing beats. Moving during calibration no longer triggers the ten-second
+setup timeout; connection timeout and the firmware lease remain active.
+Version 1 power-status firmware is still accepted with its original behavior.
+
+Help now includes a Calibration & Practice section covering the one-second
+stillness check, calibration status, recovery when calibration does not finish,
+button-hold start/stop, recording preferences and automatic low-power idle.
+Setup, sound troubleshooting and firmware guidance distinguish legacy support
+from the features that need updated firmware.
+
+The Home practice card shows a pause icon while asking the user to hold still
+for calibration, then a waveform when ready to conduct.

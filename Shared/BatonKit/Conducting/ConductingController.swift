@@ -88,11 +88,12 @@ final class ConductingController {
         }
     }
 
-    func notificationState(ready: Bool) {
+    func notificationState(ready: Bool, calibrating: Bool = false) {
         guard isEnabled else { return }
         isReady = ready
         status = ready ? "Ready. Each accepted beat plays one sound."
-                       : "Applying sensitivity and enabling notifications…"
+                       : (calibrating ? "Hold the baton still for one second to calibrate."
+                          : "Applying sensitivity and enabling notifications…")
     }
 
     func stop(reason: String = "Conducting Mode is off.") {
