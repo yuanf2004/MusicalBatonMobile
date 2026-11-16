@@ -247,18 +247,20 @@ struct RecordingSaveView: View {
     let store: ConductingRecordingStore
     let recording: ConductingRecording
     @State private var name: String
+    @FocusState private var recordingNameFocused: Bool
     @State private var confirmingDiscard = false
     @Environment(\.dismiss) private var dismiss
 
     init(store: ConductingRecordingStore, recording: ConductingRecording) {
-        self.store = store; self.recording = recording; _name = State(initialValue: recording.name)
+        self.store = store; self.recording = recording; _name = State(initialValue: "")
     }
 
     var body: some View {
         Form {
             if let error = store.errorMessage { Text(error).foregroundStyle(.red) }
             Section("Recording") {
-                TextField("Recording Name", text: $name)
+                TextField("Name Your Recording", text: $name)
+                    .focused($recordingNameFocused)
                 LabeledContent("Beats", value: "\(recording.beats.count)")
                 LabeledContent("Duration", value: String(format: "%.1f seconds", recording.duration))
             }
@@ -268,6 +270,10 @@ struct RecordingSaveView: View {
                 Button("Discard Recording", role: .destructive) { confirmingDiscard = true }
             }
         }.batonPage("Save Recording")
+        .task {
+            await Task.yield()
+            recordingNameFocused = true
+        }
         .confirmationDialog("Discard this recording?", isPresented: $confirmingDiscard, titleVisibility: .visible) {
             Button("Discard", role: .destructive) { store.discardDraft(); dismiss() }
             Button("Keep Recording", role: .cancel) {}
@@ -284,7 +290,8 @@ struct TouchpadRecordingView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var showingSave = false
     @State private var confirmingExit = false
-    @State private var name = "Touchpad Recording"
+    @State private var name = ""
+    @FocusState private var recordingNameFocused: Bool
     @State private var startingMeasureText = ""
     @State private var currentMeasure: Int?
     @State private var beatInMeasure = 0
@@ -373,7 +380,20 @@ struct TouchpadRecordingView: View {
             Button("Discard", role: .destructive) { audio.stop(); dismiss() }; Button("Keep Recording", role: .cancel) {}
         }
         .sheet(isPresented: $showingSave) {
-            NavigationStack { Form { if let error = store.errorMessage { Text(error).foregroundStyle(.red) }; TextField("Recording Name", text: $name); Button("Save") { save() }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }.batonPage("Save Recording") }
+            NavigationStack {
+                Form {
+                    if let error = store.errorMessage { Text(error).foregroundStyle(.red) }
+                    TextField("Name Your Recording", text: $name)
+                        .focused($recordingNameFocused)
+                    Button("Save") { save() }
+                        .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || name.count > 80)
+                }
+                .batonPage("Save Recording")
+                .task {
+                    await Task.yield()
+                    recordingNameFocused = true
+                }
+            }
         }
     }
 

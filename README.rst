@@ -411,3 +411,8 @@ from the features that need updated firmware.
 
 The Home practice card shows a pause icon while asking the user to hold still
 for calibration, then a waveform when ready to conduct.
+
+New baton and touchpad recording save screens begin with an empty, focused name
+field and the native gray Name Your Recording placeholder. Save stays disabled
+until a nonblank name of at most 80 characters is entered. Existing saved
+recording names remain unchanged.
