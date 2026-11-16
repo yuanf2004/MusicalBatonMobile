@@ -141,7 +141,7 @@ struct RecordingsView: View {
                         if selecting {
                             Button { toggleSelection(recording.id) } label: {
                                 Image(systemName: selected.contains(recording.id) ? "checkmark.square.fill" : "square")
-                            }.buttonStyle(.plain).accessibilityLabel(selected.contains(recording.id) ? "Deselect \(recording.name)" : "Select \(recording.name)")
+                            }.buttonStyle(BatonPressStyle()).accessibilityLabel(selected.contains(recording.id) ? "Deselect \(recording.name)" : "Select \(recording.name)")
                         }
                         VStack(alignment: .leading, spacing: 4) {
                             Text(recording.name).font(.headline)
@@ -156,7 +156,7 @@ struct RecordingsView: View {
                             else if playback.position > 0 { playback.resume(recording) }
                             else { playback.toggle(recording) }
                         } label: { Image(systemName: playback.playingID == recording.id ? "pause.fill" : "play.fill") }
-                        .buttonStyle(.borderless).accessibilityLabel(playback.playingID == recording.id ? "Pause \(recording.name)" : "Play \(recording.name)")
+                        .buttonStyle(BatonPressStyle()).accessibilityLabel(playback.playingID == recording.id ? "Pause \(recording.name)" : "Play \(recording.name)")
                         if !measures(in: recording).isEmpty {
                             Menu {
                                 ForEach(measures(in: recording), id: \.self) { measure in
@@ -171,10 +171,10 @@ struct RecordingsView: View {
                         Button { export(recording) } label: {
                             if exportingID == recording.id { ProgressView() } else { Image(systemName: "square.and.arrow.up") }
                         }
-                            .buttonStyle(.borderless).accessibilityLabel("Export \(recording.name) as audio")
+                            .buttonStyle(BatonPressStyle()).accessibilityLabel("Export \(recording.name) as audio")
                             .disabled(exportingID != nil)
                         Button(role: .destructive) { singleDelete = recording } label: { Image(systemName: "trash") }
-                            .buttonStyle(.borderless).accessibilityLabel("Delete \(recording.name)")
+                            .buttonStyle(BatonPressStyle()).accessibilityLabel("Delete \(recording.name)")
                     }
                     .contentShape(Rectangle())
                 }
@@ -287,6 +287,7 @@ struct TouchpadRecordingView: View {
     @State private var name = "Touchpad Recording"
     @State private var startingMeasureText = ""
     @State private var currentMeasure: Int?
+    @State private var beatInMeasure = 0
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -323,7 +324,24 @@ struct TouchpadRecordingView: View {
                 Button("New Beat", systemImage: "circle.fill") { addBeat(measure: false) }
                     .buttonStyle(TouchpadPressStyle()).controlSize(.large).disabled(started == nil)
             }
-            Text("\(beats.count) beats").font(.title.monospacedDigit())
+            VStack(spacing: 8) {
+                HStack(spacing: 32) {
+                    VStack(spacing: 4) {
+                        Text("Measure").font(.subheadline).foregroundStyle(.secondary)
+                        Text(currentMeasure.map(String.init) ?? "—")
+                    }
+                    VStack(spacing: 4) {
+                        Text("Beat").font(.subheadline).foregroundStyle(.secondary)
+                        Text(beatInMeasure == 0 ? "—" : String(beatInMeasure))
+                    }
+                }
+                .font(.system(size: 36, weight: .semibold, design: .rounded).monospacedDigit())
+                .foregroundStyle(.primary)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(currentMeasure.map { "Measure \($0), beat \(beatInMeasure)" }
+                    ?? "Ready for the first measure")
+                Text("\(beats.count) total beats").font(.footnote).foregroundStyle(.secondary)
+            }
             if let error = audio.error { Text(error).font(.footnote).foregroundStyle(.red) }
             Spacer()
             Button("Stop And Save", systemImage: "stop.fill") { showingSave = true }.disabled(beats.isEmpty)
@@ -367,12 +385,13 @@ struct TouchpadRecordingView: View {
         let now = ContinuousClock.now
         if started == nil {
             guard measure else { return }
-            currentMeasure = validStartingMeasure
+            currentMeasure = validStartingMeasure ?? 1
             started = now
         } else if measure, let currentMeasure { self.currentMeasure = currentMeasure + 1 }
         guard let started else { return }
         let elapsed = started.duration(to: now)
         let micros = Int64(elapsed.components.seconds) * 1_000_000 + Int64(elapsed.components.attoseconds / 1_000_000_000_000)
+        beatInMeasure = measure ? 1 : beatInMeasure + 1
         beats.append(RecordedBeat(elapsedMicroseconds: max(0, micros), isNewMeasure: measure,
                                   measureNumber: currentMeasure, isAccented: measure))
     }
@@ -428,7 +447,7 @@ struct RecordingEditorView: View {
                             Image(systemName: "pencil")
                                 .frame(minWidth: 44, minHeight: 44)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(BatonPressStyle())
                         .accessibilityLabel("Rename Recording")
                         Spacer()
                     }
@@ -674,7 +693,7 @@ private struct RecordingTimeline: View {
                     .accessibilityAction { select(beat.id) }
                     .accessibilityHint("Tap to edit. Hold and drag to move.")
                     .accessibilityAddTraits(selectedBeat == beat.id ? [.isSelected] : [])
-                    .buttonStyle(.plain).position(x: 96, y: min(proxy.size.height - 12, max(12, y)))
+                    .buttonStyle(BatonPressStyle()).position(x: 96, y: min(proxy.size.height - 12, max(12, y)))
                     .accessibilityLabel("\(beat.isNewMeasure ? "Measure" : beat.isAccented ? "Accented" : "Regular") beat at \(String(format: "%.3f", beat.elapsedSeconds)) seconds")
                 }
                 TimelineView(.animation(paused: playback.playingID == nil)) { _ in
@@ -762,7 +781,7 @@ struct TermHelpButton: View {
     @State private var showing = false
     var body: some View {
         Button { showing = true } label: { Image(systemName: "questionmark.circle") }
-            .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel("What does \(title) mean?")
+            .buttonStyle(BatonPressStyle()).foregroundStyle(.secondary).accessibilityLabel("What does \(title) mean?")
             .alert(title, isPresented: $showing) { Button("OK", role: .cancel) {} } message: { Text(message) }
     }
 }
@@ -778,20 +797,42 @@ private struct TouchpadPressStyle: PrimitiveButtonStyle {
         let configuration: PrimitiveButtonStyle.Configuration
         @Environment(\.isEnabled) private var isEnabled
         @GestureState private var pressed = false
+        @State private var didTrigger = false
+        @State private var showingFeedback = false
 
         var body: some View {
             configuration.label
                 .padding()
                 .frame(minHeight: 44)
                 .foregroundStyle(Color.white)
-                .background(BatonTheme.ultramarine.opacity(isEnabled ? (pressed ? 0.7 : 1) : 0.35),
-                            in: RoundedRectangle(cornerRadius: 12))
+                .background {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(BatonTheme.ultramarine.opacity(isEnabled ? 1 : 0.35))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(.black.opacity(showingFeedback && isEnabled ? 0.32 : 0))
+                        }
+                }
                 .contentShape(Rectangle())
                 .gesture(DragGesture(minimumDistance: 0)
-                    .updating($pressed) { _, pressed, _ in
-                        if !pressed && isEnabled { configuration.trigger() }
-                        pressed = true
+                    .updating($pressed) { _, pressed, _ in pressed = true }
+                    .onChanged { _ in
+                        guard isEnabled, !didTrigger else { return }
+                        didTrigger = true
+                        showingFeedback = true
+                        configuration.trigger()
                     })
+                .onChange(of: pressed) { _, pressed in
+                    if !pressed { didTrigger = false }
+                }
+                .task(id: pressed) {
+                    guard !pressed else { return }
+                    // Let even a quick rhythm tap remain visible for a few frames.
+                    // A new press cancels this reset without delaying its beat.
+                    do { try await Task.sleep(for: .milliseconds(150)) }
+                    catch { return }
+                    showingFeedback = false
+                }
                 .accessibilityAddTraits(.isButton)
                 .accessibilityAction { if isEnabled { configuration.trigger() } }
         }

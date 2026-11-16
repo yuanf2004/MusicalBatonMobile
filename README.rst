@@ -101,6 +101,14 @@ behavior has not yet been validated on hardware.
 Product visual theme
 --------------------
 
+Custom product-app card and icon buttons, including recording controls and
+rhythm pads, darken slightly while held and restore their appearance on release. Standard iOS buttons retain their native
+press feedback. Disabled cards do not show pressed feedback.
+The touchpad's New Measure Beat and New Beat buttons use a darker blue background
+while pressed and for 150 ms after release so quick rhythm taps remain visible,
+keeping their white labels bright. Beats still trigger immediately on touch-down,
+once per press; the visual reset never delays audio.
+
 Musical Baton uses the requested blue accent (sRGB #0437F2) in both light and
 dark mode, with warm ivory backgrounds and soft card surfaces in light mode
 and deep blue surfaces in dark mode. Instrument Serif Regular is bundled
@@ -358,3 +366,15 @@ automatically re-prepares the selected sound on the next tap.
 
 Touchpad sound selection locks after the first beat starts the recording, keeping
 its audio and saved sound consistent. Choose and preview sounds before starting.
+
+Touchpad live counters
+----------------------
+
+The touchpad displays the current measure and beat, plus total recorded beats.
+Counter numbers use the primary text color: black in light mode and white in
+dark mode.
+New Measure Beat starts measure 1 (or the optional starting measure) at beat 1.
+New Beat advances the beat within that measure; the next New Measure Beat
+advances the measure and resets its beat to 1. Counters show dashes before the
+first beat and only advance when a beat is successfully played and recorded.
+New touchpad recordings default to numbered measures starting at 1.

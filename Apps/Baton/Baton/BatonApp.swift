@@ -49,7 +49,7 @@ struct PracticeView: View {
                             }
                             Spacer(); Image(systemName: "chevron.right")
                         }.padding(20).background(BatonTheme.surface, in: RoundedRectangle(cornerRadius: 24))
-                    }.buttonStyle(.plain).disabled(manager.conducting.isEnabled)
+                    }.buttonStyle(BatonPressStyle()).disabled(manager.conducting.isEnabled)
                     Button { showingPreferences = true } label: {
                         HStack(spacing: 14) {
                             Image(systemName: "slider.horizontal.3").font(.title2)
@@ -66,7 +66,7 @@ struct PracticeView: View {
                         .padding(20)
                         .background(BatonTheme.surface, in: RoundedRectangle(cornerRadius: 24))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(BatonPressStyle())
                     .disabled(manager.conducting.isEnabled)
                     Button("Test Current Sound", systemImage: "speaker.wave.2") {
                         if let profile = manager.conductingProfiles.selected { preview.play(profile.otherBeatSound) }
