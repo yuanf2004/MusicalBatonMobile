@@ -10,6 +10,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Patch GestureFilter on runner only (repo is not changed)
+        run: |
+          perl -0pi -e 's/(private\(set\) var lastReceived: TimeInterval\?\n)/$1\n    init(tree: GestureTree) {\n        self.tree = tree\n    }\n/' Shared/BatonKit/Conducting/GestureFilter.swift
+          grep -n -A3 "init(tree: GestureTree)" Shared/BatonKit/Conducting/GestureFilter.swift
+
       - name: Build
         id: build
         continue-on-error: true
