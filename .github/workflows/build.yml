@@ -10,34 +10,43 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Find the Xcode project
-        id: find
-        run: |
-          PROJ=$(find . -name "Baton.xcodeproj" -not -path "*/node_modules/*" | head -n 1)
-          echo "Found: $PROJ"
-          echo "proj=$PROJ" >> "$GITHUB_OUTPUT"
-
-      - name: List what Xcode sees (for debugging)
-        run: xcodebuild -list -project "${{ steps.find.outputs.proj }}"
-
       - name: Build
+        id: build
+        continue-on-error: true
         run: |
+          set -o pipefail
           xcodebuild \
-            -project "${{ steps.find.outputs.proj }}" \
-            -target Baton \
+            -project Apps/Baton/Baton.xcodeproj \
+            -scheme "Musical Baton" \
             -configuration Release \
             -sdk iphoneos \
-            SYMROOT="$PWD/build" \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             DEVELOPMENT_TEAM="" \
-            build
+            build 2>&1 | tee build.log
+
+      - name: Show errors only
+        if: always()
+        run: grep -E "error:" build.log | sort -u | head -40 || true
+
+      - name: Upload full log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+
+      - name: Fail if build failed
+        if: steps.build.outcome == 'failure'
+        run: exit 1
 
       - name: Package IPA
         run: |
           mkdir Payload
-          cp -R build/Release-iphoneos/Baton.app Payload/
+          cp -R build/Build/Products/Release-iphoneos/Baton.app Payload/
           zip -r Baton.ipa Payload
 
       - uses: actions/upload-artifact@v4
