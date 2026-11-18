@@ -189,6 +189,9 @@ struct PracticeView: View {
 
     private var healthCard: some View {
         VStack(alignment: .leading, spacing: 14) {
+            Label(manager.batteryPercentage.map { "Battery: \($0)% (estimated)" } ?? "Battery unavailable",
+                  systemImage: "battery.100percent")
+                .foregroundStyle(manager.batteryPercentage.map { $0 >= 70 ? Color.green : ($0 >= 30 ? Color.orange : Color.red) } ?? Color.secondary)
             Text("Baton Health").font(BatonTheme.serif(28, relativeTo: .title2))
                 .foregroundStyle(BatonTheme.ultramarine)
             Label(manager.isDisconnecting ? "Disconnecting" : "Connected", systemImage: "antenna.radiowaves.left.and.right")
