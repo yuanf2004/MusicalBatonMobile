@@ -440,3 +440,12 @@ play-from-measure menu: black in light mode and white in dark mode.
 The measure-playback menu explicitly overrides the blue app tint with the
 primary text color, and row icons use Color.primary rather than an inherited
 hierarchical foreground style.
+
+PCB battery display
+-------------------
+Baton Health shows the estimated battery percentage from standard BLE Battery
+Service 180F / Battery Level 2A19, refreshed every 15 seconds. Green is 70-100%,
+yellow/orange 30-69%, red below 30%. Missing or invalid values show Battery
+unavailable; disconnect clears the previous device's value. Older firmware
+and DK builds remain compatible without a battery service. The PCB estimate
+is based on LiPo voltage, so charging and load affect accuracy.

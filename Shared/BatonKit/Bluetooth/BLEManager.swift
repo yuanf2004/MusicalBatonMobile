@@ -6,6 +6,20 @@ import Observation
 @MainActor
 @Observable
 final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @preconcurrency CBPeripheralDelegate {
+    private(set) var batteryPercentage: Int?
+    @ObservationIgnored private var batteryPolling: Task<Void, Never>?
+
+    private func startBatteryPolling(_ model: BLECharacteristic) {
+        batteryPolling?.cancel()
+        batteryPolling = Task { [weak self, weak model] in
+            while !Task.isCancelled {
+                guard let self, let model, self.isConnected else { return }
+                if !model.readPending { self.read(model) }
+                do { try await Task.sleep(for: .seconds(15)) } catch { return }
+            }
+        }
+    }
+
     private(set) var bluetoothState: CBManagerState = .unknown
     private(set) var isScanning = false
     private(set) var devices: [BLEDevice] = []
@@ -448,6 +462,9 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
     }
 
     private func resetConnection() {
+        batteryPolling?.cancel()
+        batteryPolling = nil
+        batteryPercentage = nil
         practicePolling?.cancel()
         practicePolling = nil
         lastPracticeReply = nil
@@ -567,6 +584,10 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
         }
         serviceModel.characteristics = (service.characteristics ?? []).map(BLECharacteristic.init)
         for model in serviceModel.characteristics {
+            if service.uuid == CBUUID(string: "180F"),
+               model.characteristic.uuid == CBUUID(string: "2A19"),
+               model.characteristic.properties.contains(.read) { startBatteryPolling(model) }
+
             log("Characteristic discovered [\(service.uuid)]: \(model.characteristic.uuid)")
             if model.isBatonName, model.characteristic.properties.contains(.read) { read(model) }
             if model.isBatonPractice, model.characteristic.properties.contains([.read, .write]) {
@@ -580,6 +601,13 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
         let receivedUptime = ProcessInfo.processInfo.systemUptime
         guard let model = model(for: characteristic) else { return }
         model.readPending = false
+        if characteristic.service?.uuid == CBUUID(string: "180F"),
+           characteristic.uuid == CBUUID(string: "2A19") {
+            if error == nil, let data = characteristic.value, data.count == 1,
+               let value = data.first, value <= 100 { batteryPercentage = Int(value) }
+            else { batteryPercentage = nil }
+            if error != nil { return } // An unavailable battery must not interrupt practice.
+        }
         if let error {
             if model.isBatonPractice { stopConducting(reason: "Baton control failed: \(error.localizedDescription)") }
             if model.isBatonName, isRenamingBaton { finishNameRequest(error: error.localizedDescription) }
