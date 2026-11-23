@@ -28,6 +28,16 @@ nonisolated struct ConductingRecording: Codable, Identifiable, Equatable, Sendab
     var beats: [RecordedBeat]
     // Optional for decoding existing recordings; resolved once before editing.
     var startingMeasureNumber: Int?
+    // Optional so recordings saved before reports existed still decode.
+    // Nil sensitivity means a touchpad (or legacy) recording.
+    var sensitivity: DetectionSensitivity?
+    var editLog: RecordingEditLog?
+
+    /// True when the edited beats differ from what was captured.
+    var hasBeatEdits: Bool {
+        func key(_ b: RecordedBeat) -> String { "\(b.id)|\(b.elapsedMicroseconds)|\(b.isNewMeasure)|\(b.isAccented)" }
+        return Set(beats.map(key)) != Set(originalBeats.map(key)) || beats.count != originalBeats.count
+    }
 
     /// Existing files may be unsorted. Edits keep order, making this pass O(N).
     mutating func recalculateBeatPositions() {
@@ -68,10 +78,16 @@ nonisolated struct ConductingRecording: Codable, Identifiable, Equatable, Sendab
     }
 }
 
+/// Editor actions that cannot be derived from comparing beat lists.
+nonisolated struct RecordingEditLog: Codable, Equatable, Sendable {
+    var undoCount = 0
+}
+
 private nonisolated struct RecordingDraft: Codable, Sendable {
     var id = UUID()
     var createdAt = Date()
     var sound: ClickVoice
+    var sensitivity: DetectionSensitivity?
     var beats: [RecordedBeat] = []
 }
 
@@ -152,9 +168,9 @@ final class ConductingRecordingStore {
 
     var isCapturing: Bool { draft != nil && recoveredDraft == nil }
 
-    func beginCapture(sound: ClickVoice, startedAt uptime: TimeInterval) {
+    func beginCapture(sound: ClickVoice, sensitivity: DetectionSensitivity? = nil, startedAt uptime: TimeInterval) {
         guard draft == nil else { return }
-        let value = RecordingDraft(sound: sound)
+        let value = RecordingDraft(sound: sound, sensitivity: sensitivity)
         draft = value
         recordingStartedUptime = uptime
         activeDraftBeatCount = 0
@@ -220,7 +236,7 @@ final class ConductingRecordingStore {
     private func recording(from draft: RecordingDraft, name: String) -> ConductingRecording {
         ConductingRecording(id: draft.id, name: name, createdAt: draft.createdAt, modifiedAt: Date(),
                             originalSound: draft.sound, currentSound: draft.sound,
-                            originalBeats: draft.beats, beats: draft.beats)
+                            originalBeats: draft.beats, beats: draft.beats, sensitivity: draft.sensitivity)
     }
 
     private func clearDraftState() {
