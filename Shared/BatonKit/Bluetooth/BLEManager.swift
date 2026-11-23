@@ -374,7 +374,6 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
         model.error = nil
         model.readPending = true
         log("Read requested [\(model.characteristic.uuid)]")
-        if model.isBatonPractice { linkEvaluation.requestedRead(at: ProcessInfo.processInfo.systemUptime) }
         peripheral.readValue(for: model.characteristic)
     }
 
@@ -604,7 +603,6 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
         let receivedUptime = ProcessInfo.processInfo.systemUptime
         guard let model = model(for: characteristic) else { return }
         let wasRead = model.readPending
-        if model.isBatonPractice && wasRead { linkEvaluation.finishedRead(at: receivedUptime, success: error == nil) }
         model.readPending = false
         if characteristic.service?.uuid == CBUUID(string: "180F"),
            characteristic.uuid == CBUUID(string: "2A19") {
@@ -643,7 +641,7 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
             if model.isBatonBeat {
                 do {
                     let beat = try BatonBeatPacket(data: data)
-                    if model.isNotifying && !wasRead { linkEvaluation.receive(.beat, sequence: beat.sequence, device: beat.uptimeMilliseconds, at: receivedUptime) }
+                    if model.isNotifying && !wasRead { linkEvaluation.receive(sequence: beat.sequence, device: beat.uptimeMilliseconds, at: receivedUptime) }
                     if model.isNotifying { conducting.receive(beat, receivedAt: receivedUptime) }
                     log("BEAT seq=\(beat.sequence) t=\(beat.uptimeMilliseconds) strength=\(beat.strength)")
                 } catch { log("BEAT DECODE ERROR: \(error.localizedDescription)") }
@@ -651,7 +649,6 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
             if model.isBatonMotion {
                 imuRecorder.receive(data, at: receivedAt, uptime: receivedUptime)
                 if model.isNotifying, let packet = try? BatonMotionPacket(data: data) {
-                    if !wasRead { linkEvaluation.receive(.motion, sequence: packet.sequence, device: packet.uptimeMilliseconds, at: receivedUptime) }
                     conducting.receiveMotion(packet, receivedAt: receivedUptime)
                 }
             }
@@ -675,8 +672,7 @@ final class BLEManager: NSObject, @preconcurrency CBCentralManagerDelegate, @pre
         model.notificationPending = false
         model.isNotifying = characteristic.isNotifying
         if !model.isNotifying {
-            if model.isBatonBeat { linkEvaluation.subscriptionEnded(.beat) }
-            if model.isBatonMotion { linkEvaluation.subscriptionEnded(.motion) }
+            if model.isBatonBeat { linkEvaluation.subscriptionEnded() }
         }
         if model.isBatonMotion, !model.isNotifying { imuRecorder.stop(reason: "Motion notifications ended") }
         if model.isBatonMotion, conducting.isEnabled, conducting.filterMode == .gesture {

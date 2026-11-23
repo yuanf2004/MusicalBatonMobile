@@ -476,6 +476,13 @@ one row per beat: ``time_s,source,label,offset_ms,measure``. Host checks are in
 
 Bluetooth link evaluation
 -------------------------
+The evaluation now records beat notifications only: received beat count,
+sequence gaps estimating missing/lost beats, and phone arrival spacing. Motion
+samples and practice-control read round trips are excluded. The CSV preserves
+PCB uptime and phone monotonic timestamps; a true one-way PCB-to-phone latency
+requires synchronized clocks and is not inferred from an unsynchronized clock
+difference.
+
 Open Settings → Evaluation → Bluetooth Evaluation. Connect a baton, start a
 live evaluation, then practice with the configuration under test. Finish the
 evaluation to inspect the results and share its CSV. The latest run stays in
