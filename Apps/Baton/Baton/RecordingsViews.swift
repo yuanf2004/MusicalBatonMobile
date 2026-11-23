@@ -236,7 +236,7 @@ struct RecordingsView: View {
     }
 }
 
-private struct ActivityView: UIViewControllerRepresentable {
+struct ActivityView: UIViewControllerRepresentable {
     let items: [Any]
     func makeUIViewController(context: Context) -> UIActivityViewController { UIActivityViewController(activityItems: items, applicationActivities: nil) }
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
@@ -443,6 +443,7 @@ struct RecordingEditorView: View {
     @State private var editingName = false
     @State private var confirmingBeatDelete = false
     @State private var showingGuide = false
+    @State private var showingReport = false
     @State private var playback = RecordingPlaybackController()
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
@@ -583,9 +584,12 @@ struct RecordingEditorView: View {
         }
         .background { BatonTheme.canvas.onTapGesture { selectedBeat = nil } }.navigationTitle("Edit Recording").navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
+            ToolbarItemGroup(placement: .topBarLeading) {
                 Button { showingGuide = true } label: { Image(systemName: "questionmark.circle") }
                     .accessibilityLabel("Recording editor guide")
+                Button { playback.stop(); preview.stop(); showingReport = true } label: { Image(systemName: "chart.bar.doc.horizontal") }
+                    .accessibilityLabel("Export Report")
+                    .disabled(!working.hasBeatEdits)
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if selectedBeat != nil {
@@ -600,6 +604,7 @@ struct RecordingEditorView: View {
             Button("Cancel", role: .cancel) {}
         } message: { Text("The beat will be removed from the edited copy. You can still undo it before saving or restore the original later.") }
         .sheet(isPresented: $showingGuide) { NavigationStack { RecordingGuideView() } }
+        .sheet(isPresented: $showingReport) { NavigationStack { BeatReportView(report: BeatDetectionReport(recording: working)) } }
         .onChange(of: scenePhase) { _, phase in if phase != .active { preview.stop(); playback.stop() } }
         .onDisappear { preview.stop(); playback.stop() }
     }
@@ -617,8 +622,19 @@ struct RecordingEditorView: View {
         working.recalculateBeatPositions()
         playback.seek(working, to: position)
     }
-    private func undo() { playback.stop(); guard let value = undoStack.popLast() else { return }; redoStack.append(working); working = value }
-    private func redo() { playback.stop(); guard let value = redoStack.popLast() else { return }; undoStack.append(working); working = value }
+    // Undo/redo restore snapshots, so carry the report's undo count across them.
+    private func undo() {
+        playback.stop(); guard var value = undoStack.popLast() else { return }
+        redoStack.append(working)
+        value.editLog = RecordingEditLog(undoCount: (working.editLog?.undoCount ?? 0) + 1)
+        working = value
+    }
+    private func redo() {
+        playback.stop(); guard var value = redoStack.popLast() else { return }
+        undoStack.append(working)
+        value.editLog = working.editLog
+        working = value
+    }
     private func editBeat(_ id: UUID, change: (inout RecordedBeat) -> Void) {
         mutate { value in
             guard let index = value.beats.firstIndex(where: { $0.id == id }) else { return }
@@ -664,6 +680,7 @@ struct RecordingGuideView: View {
                 Label("Accent and New measure switches show and change the selected beat's current state. A new measure automatically enables accent.", systemImage: "switch.2")
                 Label("Hold and drag a dot to move it, or enter its exact time in seconds (0–86400) and tap Set time. Earlier and Later move by 10 milliseconds. Delete asks for confirmation and remains undoable until you save.", systemImage: "arrow.up.arrow.down")
                 Label("Revert restores the original beats and sound but keeps the recording's current name.", systemImage: "arrow.counterclockwise")
+                Label("After editing beats, Export Report compares the detected beats with your edited beats (treated as correct) and shares a PDF or CSV.", systemImage: "chart.bar.doc.horizontal")
             }
         }
         .batonPage("Recording Guide")

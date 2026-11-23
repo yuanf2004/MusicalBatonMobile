@@ -441,11 +441,35 @@ The measure-playback menu explicitly overrides the blue app tint with the
 primary text color, and row icons use Color.primary rather than an inherited
 hierarchical foreground style.
 
-PCB battery display
--------------------
-Baton Health shows the estimated battery percentage from standard BLE Battery
-Service 180F / Battery Level 2A19, refreshed every 15 seconds. Green is 70-100%,
-yellow/orange 30-69%, red below 30%. Missing or invalid values show Battery
-unavailable; disconnect clears the previous device's value. Older firmware
-and DK builds remain compatible without a battery service. The PCB estimate
-is based on LiPo voltage, so charging and load affect accuracy.
+Beat detection report
+---------------------
+
+Edit Recording has an Export Report action (chart icon, top left). It is only
+enabled once the beats differ from what was captured. The report treats the
+edited beats as correct and compares them with the original detected beats.
+All times are relative to the start of the recording.
+
+Matching uses ``BeatDetectionReport.matchWindowMicroseconds`` (125 ms: half the
+250 ms debounce, and under half a beat at 184 bpm). Pairs are taken closest
+first, so each detected and edited beat is used at most once. Every beat then gets
+one label. A matched beat has a partner. A missed beat is an edited beat with no
+detected partner. A duplicate is an unpaired detected beat that lands near an edited
+beat that already has a partner. A false trigger is a detected beat with no
+edited beat nearby.
+
+The report shows beat accuracy (matched ÷ all labels), missed, duplicate and
+false-trigger rates, and net count difference. It also shows the average timing
+offset (detected minus edited, so a positive value means late), timing
+consistency (standard deviation), and the share of beats within 50 ms. Tempo and
+steadiness are given for both versions, and accuracy per measure appears when
+measures are labeled. The edit summary lists beats added and deleted (from beat
+IDs), undos, and the edit rate.
+
+Recordings now store an optional ``sensitivity`` and ``editLog`` (undo count).
+Both are optional, so earlier saved files still decode. Baton sessions record the
+active sensitivity; touchpad recordings show "None (touchpad)".
+
+Export opens the share sheet for Files, Messages, Google Drive and other
+targets. It offers a single-page PDF made with ``ImageRenderer``, or a CSV with
+one row per beat: ``time_s,source,label,offset_ms,measure``. Host checks are in
+``Tests/BeatDetectionReportChecks.swift``.
