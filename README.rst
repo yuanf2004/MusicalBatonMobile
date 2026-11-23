@@ -473,3 +473,20 @@ Export opens the share sheet for Files, Messages, Google Drive and other
 targets. It offers a single-page PDF made with ``ImageRenderer``, or a CSV with
 one row per beat: ``time_s,source,label,offset_ms,measure``. Host checks are in
 ``Tests/BeatDetectionReportChecks.swift``.
+
+Bluetooth link evaluation
+-------------------------
+Open Settings → Evaluation → Bluetooth Evaluation. Connect a baton, start a
+live evaluation, then practice with the configuration under test. Finish the
+evaluation to inspect the results and share its CSV. The latest run stays in
+memory until replaced or the app exits. Load simulated run exercises the same
+analysis with synthetic packets and controlled gaps without hardware.
+
+Beat and motion counters are tracked independently with 16-bit wrap handling.
+Forward gaps estimate missing notifications between observed packets. Duplicates
+and backward arrivals are labeled in the CSV. Loss outside the observed range
+and radio retransmissions cannot be inferred. Arrival spacing includes the
+baton's event cadence. Read round trips use the iPhone monotonic clock around
+existing practice-control reads, including app scheduling and peripheral work.
+The chart groups successful round trips in 5 ms bins. These times cannot directly
+verify a 15 ms one-way beat latency budget. Export before starting another run.

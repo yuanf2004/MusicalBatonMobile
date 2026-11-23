@@ -27,3 +27,5 @@ compile "$core/Models/BatonPracticePacket.swift" Tests/PracticePacketChecks.swif
 "$out/practice"
 compile "$core/Models/ConductingProfile.swift" "$core/Conducting/BeatSound.swift" "$core/Recording/ConductingRecording.swift" "$core/Recording/BeatDetectionReport.swift" Tests/BeatDetectionReportChecks.swift -o "$out/beat-report"
 "$out/beat-report"
+compile "$core/Models/BluetoothEvaluation.swift" Tests/BluetoothEvaluationChecks.swift -o "$out/bluetooth-eval"
+"$out/bluetooth-eval"

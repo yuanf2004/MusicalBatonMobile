@@ -44,6 +44,9 @@ struct SettingsView: View {
                 Text("You can override this on Home before each session. Recording stores only the timing of beats you hear, not microphone audio.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
+            Section("Evaluation") {
+                NavigationLink("Bluetooth Evaluation") { BluetoothEvaluationView(manager: session.manager) }
+            }
             Section("Connected Batons") {
                 if session.manager.isConnected {
                     NavigationLink { BatonDetailsView(session: session) } label: {
