@@ -446,33 +446,31 @@ Beat detection report
 
 Edit Recording has an Export Report action (chart icon, top left). It is only
 enabled once the beats differ from what was captured. The report treats the
-edited beats as correct and compares them with the original detected beats.
-All times are relative to the start of the recording.
+edited beats as correct and compares them with the beats the baton played. All
+times are relative to the start of the recording.
 
-Matching uses ``BeatDetectionReport.matchWindowMicroseconds`` (125 ms: half the
-250 ms debounce, and under half a beat at 184 bpm). Pairs are taken closest
-first, so each detected and edited beat is used at most once. Every beat then gets
-one label. A matched beat has a partner. A missed beat is an edited beat with no
-detected partner. A duplicate is an unpaired detected beat that lands near an edited
-beat that already has a partner. A false trigger is a detected beat with no
-edited beat nearby.
+Beats are matched by time, not by which dot was edited. A played beat and an edited
+beat match when they are within ``BeatDetectionReport.matchWindowMicroseconds``
+(125 ms: half the 250 ms debounce, and under half a beat at 184 bpm). Pairs are
+taken closest first, and each beat is used at most once. Unmatched edited beats
+are misses (false negatives). Unmatched played beats, including double fires, are
+false positives.
 
-The report shows beat accuracy (matched ÷ all labels), missed, duplicate and
-false-trigger rates, and net count difference. It also shows the average timing
-offset (detected minus edited, so a positive value means late), timing
-consistency (standard deviation), and the share of beats within 50 ms. Tempo and
-steadiness are given for both versions, and accuracy per measure appears when
-measures are labeled. The edit summary lists beats added and deleted (from beat
-IDs), undos, and the edit rate.
+- Precision = matched / beats played x 100. Beats added in the editor were never
+  played, so they cannot count toward precision.
+- Recall = matched / edited beats x 100. Added beats lower recall.
+- Net beat count change = edited - played, signed. Positive means the baton
+  played too few beats. It is also shown as a percentage of the edited count.
+- Average offset magnitude = mean |played - edited| over matched beats, plus the
+  share of matched beats within 50 ms.
+- Edits lists beats added and deleted, counted from beat IDs.
 
-Recordings now store an optional ``sensitivity`` and ``editLog`` (undo count).
-Both are optional, so earlier saved files still decode. Baton sessions record the
-active sensitivity; touchpad recordings show "None (touchpad)".
+In the app, Precision and Recall have "?" help buttons. The exported PDF leaves
+them out. Export opens the share sheet for Files, Messages, Google Drive and other
+targets. It offers a single-page PDF made with ``ImageRenderer``, or a CSV with one
+row per beat: ``time_s,source,label,offset_ms``. Labels are ``matched``, ``missed``
+and ``false_positive``. Host checks are in ``Tests/BeatDetectionReportChecks.swift``.
 
-Export opens the share sheet for Files, Messages, Google Drive and other
-targets. It offers a single-page PDF made with ``ImageRenderer``, or a CSV with
-one row per beat: ``time_s,source,label,offset_ms,measure``. Host checks are in
-``Tests/BeatDetectionReportChecks.swift``.
 
 Bluetooth link evaluation
 -------------------------

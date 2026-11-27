@@ -622,19 +622,8 @@ struct RecordingEditorView: View {
         working.recalculateBeatPositions()
         playback.seek(working, to: position)
     }
-    // Undo/redo restore snapshots, so carry the report's undo count across them.
-    private func undo() {
-        playback.stop(); guard var value = undoStack.popLast() else { return }
-        redoStack.append(working)
-        value.editLog = RecordingEditLog(undoCount: (working.editLog?.undoCount ?? 0) + 1)
-        working = value
-    }
-    private func redo() {
-        playback.stop(); guard var value = redoStack.popLast() else { return }
-        undoStack.append(working)
-        value.editLog = working.editLog
-        working = value
-    }
+    private func undo() { playback.stop(); guard let value = undoStack.popLast() else { return }; redoStack.append(working); working = value }
+    private func redo() { playback.stop(); guard let value = redoStack.popLast() else { return }; undoStack.append(working); working = value }
     private func editBeat(_ id: UUID, change: (inout RecordedBeat) -> Void) {
         mutate { value in
             guard let index = value.beats.firstIndex(where: { $0.id == id }) else { return }
@@ -680,7 +669,7 @@ struct RecordingGuideView: View {
                 Label("Accent and New measure switches show and change the selected beat's current state. A new measure automatically enables accent.", systemImage: "switch.2")
                 Label("Hold and drag a dot to move it, or enter its exact time in seconds (0–86400) and tap Set time. Earlier and Later move by 10 milliseconds. Delete asks for confirmation and remains undoable until you save.", systemImage: "arrow.up.arrow.down")
                 Label("Revert restores the original beats and sound but keeps the recording's current name.", systemImage: "arrow.counterclockwise")
-                Label("After editing beats, Export Report compares the detected beats with your edited beats (treated as correct) and shares a PDF or CSV.", systemImage: "chart.bar.doc.horizontal")
+                Label("After editing beats, Export Report compares the beats the baton played with your edited beats (treated as correct), including precision and recall, and shares a PDF or CSV.", systemImage: "chart.bar.doc.horizontal")
             }
         }
         .batonPage("Recording Guide")
