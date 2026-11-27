@@ -124,9 +124,8 @@ struct PracticeView: View {
         .onChange(of: manager.isConnected) { _, _ in session.connectionChanged() }
         .onChange(of: manager.conducting.isReady) { _, ready in
             guard ready, recordNextSession, !session.recordings.isCapturing,
-                  let profile = manager.conducting.activeProfile else { return }
-            session.recordings.beginCapture(sound: profile.otherBeatSound, sensitivity: profile.sensitivity,
-                                            startedAt: ProcessInfo.processInfo.systemUptime)
+                  let sound = manager.conducting.activeProfile?.otherBeatSound else { return }
+            session.recordings.beginCapture(sound: sound, startedAt: ProcessInfo.processInfo.systemUptime)
         }
         .onChange(of: manager.conducting.isEnabled) { old, enabled in
             guard old, !enabled, session.recordings.isCapturing else { return }
